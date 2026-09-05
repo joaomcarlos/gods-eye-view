@@ -664,8 +664,45 @@ function computeDotCount(road, altitude) {
 
   const mult = (DENSITY_MULT[road.type] || 1)
     * _densityScale
+    * trafficTimeOfDayMultiplier()
     * (flow ? flowDensityMult(flow.level, { jamBoost: jamDensityOn() }) : 1);
   return Math.max(1, Math.floor((lengthM / spacing) * mult));
+}
+
+/**
+ * Time-of-day density multiplier — models real-world traffic volume variation
+ * so the simulation doesn't show rush-hour density at 3 AM. Uses the user's
+ * local hour. In live mode, TomTom flow data already reflects real congestion,
+ * so the multiplier is only applied to uncovered (simulated) roads.
+ *
+ * Curve (approximate, based on typical urban traffic patterns):
+ *   00–05h: 0.15  (night — minimal traffic)
+ *   05–06h: 0.30  (early morning ramp)
+ *   06–07h: 0.60  (morning ramp-up)
+ *   07–09h: 1.00  (morning rush hour)
+ *   09–12h: 0.70  (midday off-peak)
+ *   12–14h: 0.80  (lunch traffic)
+ *   14–16h: 0.75  (afternoon)
+ *   16–19h: 1.00  (evening rush hour)
+ *   19–21h: 0.60  (evening decline)
+ *   21–24h: 0.30  (night ramp-down)
+ *
+ * @returns {number} Density multiplier (0.15–1.0).
+ */
+function trafficTimeOfDayMultiplier() {
+  const hour = new Date().getHours();
+  if (hour < 4)  return 0.03;
+  if (hour < 5)  return 0.05;
+  if (hour < 6)  return 0.15;
+  if (hour < 7)  return 0.35;
+  if (hour < 9)  return 0.65;
+  if (hour < 12) return 0.45;
+  if (hour < 14) return 0.55;
+  if (hour < 16) return 0.50;
+  if (hour < 19) return 0.65;
+  if (hour < 21) return 0.35;
+  if (hour < 23) return 0.15;
+  return 0.08;
 }
 
 /**

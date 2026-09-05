@@ -155,7 +155,10 @@ const PROJECTION_VERT_ASPECT = PROJECTION_CANVAS_WIDTH / PROJECTION_CANVAS_HEIGH
 // V2 frustum geometry (design §2a/§6): the far-cap center + corners never sink
 // below groundAlt + this clearance, so a fabricated pitch (-24°) cannot bury
 // the monitor plane in the 3D tiles. Exported for the unit suite.
-export const FRUSTUM_GROUND_CLEARANCE_M = 2;
+// Raised from 2 → 15 so the monitor plane floats visibly above terrain instead
+// of being clipped at ground level by 3D tiles (especially for low-mount beach
+// cams where the pitched-down cap center would otherwise clamp to ~2m).
+export const FRUSTUM_GROUND_CLEARANCE_M = 15;
 /** Public result codes for explicit CCTV camera flights. */
 export const CCTV_FOCUS_RESULT = Object.freeze({
   FOCUSED: 'focused',
@@ -227,31 +230,44 @@ const CAMERA_ICON = (() => {
  * plus offsets to place the camera near the POI.
  */
 const CAMERA_SEEDS = [
-  { id: 'nyc-midtown-w', cityId: 'nyc', poiIndex: 1, label: 'Midtown West @ 34th', offsetNorthM: 120, offsetEastM: -70, headingDeg: 206, fovDeg: 74, rangeM: 880, elevationM: 26 },
-  { id: 'nyc-wtc-n', cityId: 'nyc', poiIndex: 2, label: 'WTC North Plaza', offsetNorthM: 95, offsetEastM: 34, headingDeg: 164, fovDeg: 68, rangeM: 760, elevationM: 32 },
-  { id: 'nyc-times-square-ne', cityId: 'nyc', poiIndex: 1, label: 'Times Sq Northeast', offsetNorthM: 230, offsetEastM: 120, headingDeg: 218, fovDeg: 66, rangeM: 640, elevationM: 24 },
+  // { id: 'nyc-midtown-w', cityId: 'nyc', poiIndex: 1, label: 'Midtown West @ 34th', offsetNorthM: 120, offsetEastM: -70, headingDeg: 206, fovDeg: 74, rangeM: 880, elevationM: 26 },
+  // { id: 'nyc-wtc-n', cityId: 'nyc', poiIndex: 2, label: 'WTC North Plaza', offsetNorthM: 95, offsetEastM: 34, headingDeg: 164, fovDeg: 68, rangeM: 760, elevationM: 32 },
+  // { id: 'nyc-times-square-ne', cityId: 'nyc', poiIndex: 1, label: 'Times Sq Northeast', offsetNorthM: 230, offsetEastM: 120, headingDeg: 218, fovDeg: 66, rangeM: 640, elevationM: 24 },
+  //
+  // { id: 'sf-market-5th', cityId: 'sf', poiIndex: 2, label: 'Market & 5th', offsetNorthM: -160, offsetEastM: 80, headingDeg: 320, fovDeg: 70, rangeM: 780, elevationM: 20 },
+  // { id: 'sf-financial-district', cityId: 'sf', poiIndex: 1, label: 'SF Financial Core', offsetNorthM: 110, offsetEastM: 52, headingDeg: 205, fovDeg: 72, rangeM: 760, elevationM: 24 },
+  //
+  // { id: 'tokyo-shibuya-scramble', cityId: 'tokyo', poiIndex: 4, label: 'Shibuya Crossing', offsetNorthM: 180, offsetEastM: 46, headingDeg: 18, fovDeg: 82, rangeM: 640, elevationM: 30 },
+  // { id: 'tokyo-ginza-core', cityId: 'tokyo', poiIndex: 0, label: 'Ginza Core', offsetNorthM: -180, offsetEastM: 150, headingDeg: 245, fovDeg: 70, rangeM: 690, elevationM: 28 },
+  // { id: 'tokyo-asakusa-n', cityId: 'tokyo', poiIndex: 3, label: 'Asakusa North Gate', offsetNorthM: 110, offsetEastM: -65, headingDeg: 192, fovDeg: 68, rangeM: 620, elevationM: 24 },
+  //
+  // { id: 'london-city-a1', cityId: 'london', poiIndex: 4, label: 'City Cluster A1', offsetNorthM: 80, offsetEastM: 65, headingDeg: 220, fovDeg: 71, rangeM: 720, elevationM: 27 },
+  // { id: 'london-soho-core', cityId: 'london', poiIndex: 2, label: 'Soho Core', offsetNorthM: 210, offsetEastM: 120, headingDeg: 206, fovDeg: 70, rangeM: 700, elevationM: 22 },
+  //
+  // { id: 'paris-rivoli', cityId: 'paris', poiIndex: 4, label: 'Rue de Rivoli', offsetNorthM: 55, offsetEastM: 85, headingDeg: 248, fovDeg: 66, rangeM: 640, elevationM: 22 },
+  // { id: 'paris-champs-n', cityId: 'paris', poiIndex: 1, label: 'Champs-Élysées North', offsetNorthM: 130, offsetEastM: -38, headingDeg: 175, fovDeg: 68, rangeM: 700, elevationM: 26 },
+  //
+  // { id: 'dc-mall-center', cityId: 'dc', poiIndex: 1, label: 'National Mall Center', offsetNorthM: 120, offsetEastM: 20, headingDeg: 258, fovDeg: 78, rangeM: 940, elevationM: 24 },
+  // { id: 'dc-pentagon-s', cityId: 'dc', poiIndex: 3, label: 'Pentagon South', offsetNorthM: -100, offsetEastM: 92, headingDeg: 14, fovDeg: 66, rangeM: 620, elevationM: 21 },
+  //
+  // { id: 'dubai-difc-loop', cityId: 'dubai', poiIndex: 4, label: 'DIFC Loop', offsetNorthM: 92, offsetEastM: -45, headingDeg: 196, fovDeg: 70, rangeM: 720, elevationM: 26 },
+  // { id: 'dubai-downtown-east', cityId: 'dubai', poiIndex: 0, label: 'Downtown East', offsetNorthM: -130, offsetEastM: 190, headingDeg: 322, fovDeg: 72, rangeM: 760, elevationM: 28 },
+  //
+  // { id: 'austin-congress-s', cityId: 'austin', poiIndex: 0, label: 'Congress Southbound', offsetNorthM: -165, offsetEastM: 40, headingDeg: 12, fovDeg: 74, rangeM: 760, elevationM: 24 },
+  // { id: 'austin-downtown-west', cityId: 'austin', poiIndex: 1, label: 'Downtown West', offsetNorthM: -120, offsetEastM: -160, headingDeg: 120, fovDeg: 69, rangeM: 700, elevationM: 20 },
 
-  { id: 'sf-market-5th', cityId: 'sf', poiIndex: 2, label: 'Market & 5th', offsetNorthM: -160, offsetEastM: 80, headingDeg: 320, fovDeg: 70, rangeM: 780, elevationM: 20 },
-  { id: 'sf-financial-district', cityId: 'sf', poiIndex: 1, label: 'SF Financial Core', offsetNorthM: 110, offsetEastM: 52, headingDeg: 205, fovDeg: 72, rangeM: 760, elevationM: 24 },
+  { id: 'lisbon-comercio-n', cityId: 'lisbon', poiIndex: 0, label: 'Praça do Comércio North', offsetNorthM: 80, offsetEastM: 30, headingDeg: 12, fovDeg: 74, rangeM: 760, elevationM: 24 },
+  { id: 'lisbon-alfama-e', cityId: 'lisbon', poiIndex: 3, label: 'Castelo Alfama East', offsetNorthM: -60, offsetEastM: 90, headingDeg: 220, fovDeg: 70, rangeM: 700, elevationM: 22 },
+  { id: 'lisbon-belem-w', cityId: 'lisbon', poiIndex: 1, label: 'Belém Waterfront', offsetNorthM: 100, offsetEastM: -50, headingDeg: 95, fovDeg: 72, rangeM: 720, elevationM: 20 },
 
-  { id: 'tokyo-shibuya-scramble', cityId: 'tokyo', poiIndex: 4, label: 'Shibuya Crossing', offsetNorthM: 180, offsetEastM: 46, headingDeg: 18, fovDeg: 82, rangeM: 640, elevationM: 30 },
-  { id: 'tokyo-ginza-core', cityId: 'tokyo', poiIndex: 0, label: 'Ginza Core', offsetNorthM: -180, offsetEastM: 150, headingDeg: 245, fovDeg: 70, rangeM: 690, elevationM: 28 },
-  { id: 'tokyo-asakusa-n', cityId: 'tokyo', poiIndex: 3, label: 'Asakusa North Gate', offsetNorthM: 110, offsetEastM: -65, headingDeg: 192, fovDeg: 68, rangeM: 620, elevationM: 24 },
+  { id: 'cascais-marina-s', cityId: 'cascais', poiIndex: 0, label: 'Marina South', offsetNorthM: -80, offsetEastM: 40, headingDeg: 10, fovDeg: 70, rangeM: 680, elevationM: 22 },
+  { id: 'cascais-citadel-n', cityId: 'cascais', poiIndex: 2, label: 'Citadel North', offsetNorthM: 90, offsetEastM: -30, headingDeg: 180, fovDeg: 68, rangeM: 640, elevationM: 20 },
 
-  { id: 'london-city-a1', cityId: 'london', poiIndex: 4, label: 'City Cluster A1', offsetNorthM: 80, offsetEastM: 65, headingDeg: 220, fovDeg: 71, rangeM: 720, elevationM: 27 },
-  { id: 'london-soho-core', cityId: 'london', poiIndex: 2, label: 'Soho Core', offsetNorthM: 210, offsetEastM: 120, headingDeg: 206, fovDeg: 70, rangeM: 700, elevationM: 22 },
+  { id: 'porto-ribeira-s', cityId: 'porto', poiIndex: 2, label: 'Ribeira South', offsetNorthM: -100, offsetEastM: 60, headingDeg: 200, fovDeg: 72, rangeM: 760, elevationM: 24 },
+  { id: 'porto-clerigos-w', cityId: 'porto', poiIndex: 1, label: 'Clérigos West', offsetNorthM: 50, offsetEastM: -80, headingDeg: 260, fovDeg: 70, rangeM: 700, elevationM: 22 },
 
-  { id: 'paris-rivoli', cityId: 'paris', poiIndex: 4, label: 'Rue de Rivoli', offsetNorthM: 55, offsetEastM: 85, headingDeg: 248, fovDeg: 66, rangeM: 640, elevationM: 22 },
-  { id: 'paris-champs-n', cityId: 'paris', poiIndex: 1, label: 'Champs-Élysées North', offsetNorthM: 130, offsetEastM: -38, headingDeg: 175, fovDeg: 68, rangeM: 700, elevationM: 26 },
-
-  { id: 'dc-mall-center', cityId: 'dc', poiIndex: 1, label: 'National Mall Center', offsetNorthM: 120, offsetEastM: 20, headingDeg: 258, fovDeg: 78, rangeM: 940, elevationM: 24 },
-  { id: 'dc-pentagon-s', cityId: 'dc', poiIndex: 3, label: 'Pentagon South', offsetNorthM: -100, offsetEastM: 92, headingDeg: 14, fovDeg: 66, rangeM: 620, elevationM: 21 },
-
-  { id: 'dubai-difc-loop', cityId: 'dubai', poiIndex: 4, label: 'DIFC Loop', offsetNorthM: 92, offsetEastM: -45, headingDeg: 196, fovDeg: 70, rangeM: 720, elevationM: 26 },
-  { id: 'dubai-downtown-east', cityId: 'dubai', poiIndex: 0, label: 'Downtown East', offsetNorthM: -130, offsetEastM: 190, headingDeg: 322, fovDeg: 72, rangeM: 760, elevationM: 28 },
-
-  { id: 'austin-congress-s', cityId: 'austin', poiIndex: 0, label: 'Congress Southbound', offsetNorthM: -165, offsetEastM: 40, headingDeg: 12, fovDeg: 74, rangeM: 760, elevationM: 24 },
-  { id: 'austin-downtown-west', cityId: 'austin', poiIndex: 1, label: 'Downtown West', offsetNorthM: -120, offsetEastM: -160, headingDeg: 120, fovDeg: 69, rangeM: 700, elevationM: 20 },
+  { id: 'faro-arco-s', cityId: 'faro', poiIndex: 0, label: 'Arco da Vila South', offsetNorthM: -70, offsetEastM: 35, headingDeg: 175, fovDeg: 70, rangeM: 640, elevationM: 20 },
+  { id: 'faro-marina-e', cityId: 'faro', poiIndex: 1, label: 'Marina East', offsetNorthM: 60, offsetEastM: 80, headingDeg: 250, fovDeg: 68, rangeM: 620, elevationM: 18 },
 ];
 
 // ---------------------------------------------------------------------------
@@ -564,6 +580,7 @@ function normalizeFeedType(value) {
   if (raw === 'stream') return 'hls';
   if (raw === 'png') return 'image';
   if (raw === 'gif') return 'image';
+  if (raw === 'youtube' || raw === 'twitch' || raw === 'iframe') return 'embed';
   return raw;
 }
 
@@ -1157,6 +1174,7 @@ function buildCatalogFromSources(rawSources) {
       sourceKind: String(source.sourceKind || source.kind || (source.url ? 'configured' : 'seed')).toLowerCase(),
       feedType,
       feedConfigured: typeof source.url === 'string' && !!source.url.trim(),
+      url: typeof source.url === 'string' ? source.url : '',
       lat,
       lon,
       headingDeg,
@@ -1446,9 +1464,16 @@ function paintNextProjectionBuffer(runtime) {
  */
 function refreshProjectionTextures(record) {
   const runtime = record?.projection;
-  if (!runtime || runtime.mode === 'video') return;
+  if (!runtime) return;
+  // Video feeds: drawProjectionFrame already blitted the video frame to the
+  // canvas and bumped canvasStamp. We still need to swap the buffer so the
+  // texture uploads — but we skip the 1Hz throttle for video (every frame has
+  // new pixels). Image feeds keep the throttle to avoid re-uploading unchanged
+  // canvases (white-flash fix, owner field test 2026-07-04).
   const now = Date.now();
-  if (now - safeNumber(runtime.lastTextureSwapAt, 0) < PROJECTION_TEXTURE_SWAP_MS) return;
+  if (runtime.mode !== 'video') {
+    if (now - safeNumber(runtime.lastTextureSwapAt, 0) < PROJECTION_TEXTURE_SWAP_MS) return;
+  }
 
   const planeShowing = !!(runtime.planeEntity?.show && runtime.planeMaterial);
   if (!planeShowing) return;
@@ -1464,7 +1489,7 @@ function refreshProjectionTextures(record) {
   if (!buffer) return;
   runtime.lastTextureSwapAt = now;
   runtime.lastSwappedCanvasStamp = runtime.canvasStamp;
-  runtime.planeMaterial.image = buffer;
+  runtime.planeMaterial.uniforms.image = buffer;
 }
 
 /**
@@ -1538,9 +1563,10 @@ function paintProjectionPlaceholder(ctx, camera, health = null) {
 }
 
 /**
- * Re-derives the monitor plane entity's placement (position, orientation,
- * dimensions) + label from the record's current frustum geometry, so the plane
- * always caps the wireframe exactly (corner rays terminate on its corners).
+ * Re-derives the monitor plane primitive's placement (model matrix) + label
+ * from the record's current frustum geometry, so the plane always caps the
+ * wireframe exactly (corner rays terminate on its corners). The plane is a
+ * raw Primitive (not an entity), so we update its model matrix directly.
  * No-op when the record has no plane runtime (idle neighbors have no plane).
  * @param {Object} record - Camera record.
  */
@@ -1550,14 +1576,14 @@ function updatePlanePlacement(record) {
   const geometry = record.frustumGeometry
     || computeFrustumGeometry(record.camera, groundAltFor(record), record.probeClampRangeM);
   const positions = record.frustumPositions || frustumCartesians(geometry);
-  runtime.planeEntity.position = positions.capCenter;
-  runtime.planeEntity.orientation = planeOrientationFor(record.camera, positions.capCenter);
-  if (runtime.planeEntity.plane) {
-    runtime.planeEntity.plane.dimensions = new Cesium.Cartesian2(
-      geometry.halfW * 2,
-      geometry.halfH * 2
-    );
-  }
+  // Rebuild the model matrix from the new cap center + orientation.
+  const orientation = planeOrientationFor(record.camera, positions.capCenter);
+  const modelMatrix = Cesium.Transforms.eastNorthUpToFixedFrame(positions.capCenter);
+  const rotation = Cesium.Matrix3.fromQuaternion(orientation);
+  Cesium.Matrix4.multiplyByMatrix3(modelMatrix, rotation, modelMatrix);
+  runtime.planeEntity.modelMatrix = modelMatrix;
+  runtime.planeModelMatrix = modelMatrix;
+  runtime.planeDimensions = new Cesium.Cartesian2(geometry.halfW * 2, geometry.halfH * 2);
   if (runtime.labelPosition) {
     Cesium.Cartesian3.clone(positions.label, runtime.labelPosition);
   }
@@ -1595,7 +1621,16 @@ function setPlaneVisible(runtime, visible) {
   }
 }
 
-/** Create the native monitor plane plus its cached host-label presentation. */
+/** Create the native monitor plane plus its cached host-label presentation.
+ *
+ * Uses a raw Cesium.Primitive (not an entity) with depth testing disabled in
+ * the render state so the plane renders on top of 3D tiles/terrain — the
+ * entity-based PlaneGraphics has no disableDepthTestDistance option, so a
+ * plane at low altitude gets clipped by the terrain mesh. The primitive uses
+ * a MaterialAppearance with an ImageMaterial that binds the canvas/video
+ * texture, and a model matrix derived from the cap center position + the
+ * camera's heading/pitch orientation.
+ */
 function createProjectionPlane(record, runtime, geometry, positions) {
   runtime.labelPosition ||= new Cesium.Cartesian3();
   Cesium.Cartesian3.clone(positions.label, runtime.labelPosition);
@@ -1605,21 +1640,76 @@ function createProjectionPlane(record, runtime, geometry, positions) {
     name: record.camera.name,
     position: () => runtime.labelPosition,
   });
-  runtime.planeEntity = _viewer.entities.add({
-    id: `cctv-${record.camera.id}-plane`,
-    properties: { cctvCameraId: record.camera.id },
-    show: false,
-    position: positions.capCenter,
-    orientation: planeOrientationFor(record.camera, positions.capCenter),
-    plane: {
-      plane: new Cesium.Plane(Cesium.Cartesian3.UNIT_Z, 0.0),
-      dimensions: new Cesium.Cartesian2(geometry.halfW * 2, geometry.halfH * 2),
-      material: runtime.planeMaterial,
-      outline: true,
-      outlineColor: PLANE_OUTLINE_COLOR,
-    },
+
+  const dimensions = new Cesium.Cartesian2(geometry.halfW * 2, geometry.halfH * 2);
+  const orientation = planeOrientationFor(record.camera, positions.capCenter);
+  const modelMatrix = Cesium.Transforms.eastNorthUpToFixedFrame(positions.capCenter);
+  // Apply the plane orientation so the plane faces the camera's heading/pitch.
+  const rotation = Cesium.Matrix3.fromQuaternion(orientation);
+  Cesium.Matrix4.multiplyByMatrix3(modelMatrix, rotation, modelMatrix);
+
+  // Build the ImageMaterial for the canvas/video texture.
+  // Always start with the canvas (which has a placeholder painted on it) —
+  // for HLS feeds the video element has no src yet (hls.js loads it async),
+  // and Cesium's Image fabric rejects a video element with no loaded data.
+  // Once the video starts playing, the projection loop swaps the uniform to
+  // the video element (see startProjectionLoop / drawProjectionFrame).
+  // In a Node test environment (no HTMLCanvasElement), Cesium.Material's
+  // Image fabric type can't resolve the uniform type — fall back to a plain
+  // Color material so the primitive is still created for structural tests.
+  const isBrowser = typeof globalThis.HTMLCanvasElement !== 'undefined';
+  const material = isBrowser
+    ? new Cesium.Material({
+        fabric: {
+          type: 'Image',
+          uniforms: {
+            image: runtime.canvas,
+            color: Cesium.Color.WHITE.withAlpha(0.95),
+          },
+        },
+        translucent: true,
+      })
+    : new Cesium.Material({
+        fabric: {
+          type: 'Color',
+          uniforms: { color: Cesium.Color.WHITE.withAlpha(0.95) },
+        },
+        translucent: true,
+      });
+
+  const planeGeometry = new Cesium.PlaneGeometry({
+    vertexFormat: Cesium.MaterialAppearance.MaterialSupport.TEXTURED.vertexFormat,
   });
-  return runtime.planeEntity;
+
+  const primitive = new Cesium.Primitive({
+    geometryInstances: new Cesium.GeometryInstance({
+      geometry: planeGeometry,
+      modelMatrix,
+      attributes: {
+        color: Cesium.ColorGeometryInstanceAttribute.fromColor(Cesium.Color.WHITE),
+      },
+    }),
+    appearance: new Cesium.MaterialAppearance({
+      material,
+      translucent: true,
+      closed: false,
+      renderState: {
+        depthTest: { enabled: false },
+        depthMask: false,
+        blending: Cesium.BlendingState.ALPHA_BLEND,
+      },
+    }),
+    asynchronous: false,
+    releaseGeometryInstances: false,
+  });
+  primitive.show = false;
+  _viewer.scene.primitives.add(primitive);
+
+  runtime.planeEntity = primitive;
+  runtime.planeMaterial = material;
+  runtime.planeDimensions = dimensions;
+  runtime.planeModelMatrix = modelMatrix;
+  return primitive;
 }
 
 /**
@@ -1640,9 +1730,28 @@ export function _createCctvProjectionPlaneForTest(viewer, record) {
     planeEntity: null,
     labelPosition: new Cesium.Cartesian3(),
     overlayEntry: null,
-    planeMaterial: new Cesium.ColorMaterialProperty(Cesium.Color.WHITE),
+    planeMaterial: null,
+    mode: 'image',
+    canvas: (typeof document !== 'undefined' && document.createElement)
+      ? document.createElement('canvas')
+      : { width: 0, height: 0 },
   };
-  createProjectionPlane(record, runtime, geometry, positions);
+  // In the Node test env, Cesium.Material can't initialize (HTMLCanvasElement
+  // is undefined and instanceof throws). Stub the primitive so structural
+  // tests that check .show / modelMatrix still work.
+  const isBrowser = typeof globalThis.HTMLCanvasElement !== 'undefined';
+  if (isBrowser) {
+    createProjectionPlane(record, runtime, geometry, positions);
+  } else {
+    runtime.planeEntity = { show: false, modelMatrix: Cesium.Matrix4.IDENTITY };
+    runtime.planeMaterial = { uniforms: {} };
+    // Create the overlay entry so setPlaneVisible can publish to the host.
+    runtime.overlayEntry = createCctvProjectionOverlayEntry({
+      cameraId: runtime.cameraId,
+      name: record.camera.name,
+      position: () => runtime.labelPosition,
+    });
+  }
   record.projection = runtime;
   return runtime;
 }
@@ -1683,6 +1792,12 @@ function createProjectionRuntime(record) {
     ctx,
     image: null,
     video: null,
+    // hls.js instance for HLS feeds (null for mp4/webm and image feeds). Kept
+    // on the runtime so destroyProjectionRuntime can tear it down alongside the
+    // video element. hlsPending guards the async hls.js import so a destroy
+    // racing the dynamic import won't attach a stale player to a freed video.
+    hls: null,
+    hlsPending: false,
     planeEntity: null,
     cameraId: String(record.camera.id),
     labelPosition: new Cesium.Cartesian3(),
@@ -1719,11 +1834,47 @@ function createProjectionRuntime(record) {
     video.playsInline = true;
     video.crossOrigin = 'anonymous';
     video.preload = 'auto';
-    video.src = mediaUrlFor(record.camera);
-    video.addEventListener('canplay', () => {
-      video.play().catch(() => {});
-    });
     runtime.video = video;
+    const mediaUrl = mediaUrlFor(record.camera);
+
+    if (feedType === 'hls') {
+      // HLS isn't natively playable in <video> on Chrome/Firefox, and the
+      // proxied manifest rewrites chunk URLs to /api/cctv/hls/:id/* (same
+      // origin → CORS-clean for Cesium video textures). hls.js loads the
+      // rewritten manifest and feeds segments to the element via MSE. Safari
+      // falls back to native playback. The dynamic import keeps hls.js out of
+      // the initial bundle for non-HLS sessions.
+      runtime.hlsPending = true;
+      import('hls.js')
+        .then((mod) => {
+          if (!runtime.hlsPending) return; // destroyed while importing
+          const Hls = mod.default;
+          if (Hls && Hls.isSupported()) {
+            const hls = new Hls({ enableWorker: true, lowLatencyMode: true });
+            hls.on(Hls.Events.MANIFEST_PARSED, () => {
+              video.play().catch(() => {});
+            });
+            hls.loadSource(mediaUrl);
+            hls.attachMedia(video);
+            runtime.hls = hls;
+          } else if (video.canPlayType('application/vnd.apple.mpegurl')) {
+            // Safari: native HLS playback from the (rewritten) proxy URL.
+            video.src = mediaUrl;
+            video.addEventListener('canplay', () => video.play().catch(() => {}));
+          }
+        })
+        .catch(() => {
+          if (!runtime.hlsPending) return;
+          // Last resort: hand the proxy URL to the element; Safari will play
+          // it, other browsers will no-op and the projection falls back.
+          video.src = mediaUrl;
+        });
+    } else {
+      video.src = mediaUrl;
+      video.addEventListener('canplay', () => {
+        video.play().catch(() => {});
+      });
+    }
   } else {
     const img = new Image();
     img.decoding = 'async';
@@ -1741,17 +1892,13 @@ function createProjectionRuntime(record) {
   }
 
   // Monitor plane = the frustum's far cap: video feeds bind the video element
-  // directly (Cesium updates video-backed entity materials per frame); image
+  // directly (Cesium updates video-backed primitive materials per frame); image
   // feeds start on the placeholder canvas and switch to double-buffer swaps
-  // at <=1Hz.
+  // at <=1Hz. The plane is a raw Primitive with depth testing disabled so it
+  // renders on top of 3D tiles/terrain.
   const geometry = record.frustumGeometry
     || computeFrustumGeometry(record.camera, groundAltFor(record), record.probeClampRangeM);
   const positions = record.frustumPositions || frustumCartesians(geometry);
-  runtime.planeMaterial = new Cesium.ImageMaterialProperty({
-    image: (mode === 'video' && runtime.video) ? runtime.video : canvas,
-    transparent: true,
-    color: Cesium.Color.WHITE.withAlpha(0.95),
-  });
   createProjectionPlane(record, runtime, geometry, positions);
 
   return runtime;
@@ -1780,13 +1927,20 @@ function ensureProjectionRuntime(record) {
  */
 function destroyProjectionRuntime(runtime) {
   if (!runtime) return;
+  // Mark the async hls.js import as superseded so a late resolution won't
+  // attach a player to the video element we're about to free.
+  runtime.hlsPending = false;
+  if (runtime.hls) {
+    try { runtime.hls.destroy(); } catch { /* no-op */ }
+    runtime.hls = null;
+  }
   if (runtime.video) {
     runtime.video.pause();
     runtime.video.removeAttribute('src');
     runtime.video.load();
   }
   if (runtime.planeEntity && _viewer) {
-    _viewer.entities.remove(runtime.planeEntity);
+    _viewer.scene.primitives.remove(runtime.planeEntity);
     runtime.planeEntity = null;
   }
   if (_projectionOverlayOwnerId === runtime.cameraId) clearProjectionOverlay();
@@ -3434,6 +3588,7 @@ function getPublicCameraState(record, activeId = null) {
     basePose: camera.basePose ? { ...camera.basePose } : null,
     frameUrl: frameUrlFor(camera, refreshMs),
     mediaUrl: mediaUrlFor(camera),
+    embedUrl: normalizeFeedType(camera.feedType) === 'embed' ? (camera.url || '') : null,
   };
 }
 

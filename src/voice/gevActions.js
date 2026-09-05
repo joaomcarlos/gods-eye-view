@@ -179,12 +179,14 @@ const LAYER_ALIASES = new Map([
 ]);
 
 const CITY_ALIASES = new Map([
-  ['new york', 'nyc'],
-  ['new york city', 'nyc'],
-  ['san francisco', 'sf'],
-  ['washington', 'dc'],
-  ['washington dc', 'dc'],
-  ['washington d.c.', 'dc'],
+  // ['new york', 'nyc'],
+  // ['new york city', 'nyc'],
+  // ['san francisco', 'sf'],
+  // ['washington', 'dc'],
+  // ['washington dc', 'dc'],
+  // ['washington d.c.', 'dc'],
+  ['lisboa', 'lisbon'],
+  ['oporto', 'porto'],
 ]);
 
 // Basemap stack vocabulary. Switching requires an explicit stack name

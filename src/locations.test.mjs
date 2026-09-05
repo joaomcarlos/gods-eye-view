@@ -543,14 +543,14 @@ test('globe and city-overview flights name the world frame explicitly', () => {
   assert.equal(globeViewer.flights[0].endTransform, Cesium.Matrix4.IDENTITY);
 
   const cityViewer = stubViewer();
-  flyToPresetLocation(cityViewer, 'austin', { viewMode: 'overview' });
+  flyToPresetLocation(cityViewer, 'lisbon', { viewMode: 'overview' });
   assert.equal(cityViewer.flights[0].endTransform, Cesium.Matrix4.IDENTITY);
 });
 
 test('city and landmark flights expose completion and cancellation hooks', () => {
   const overviewViewer = stubViewer();
   const overviewEvents = [];
-  flyToPresetLocation(overviewViewer, 'austin', {
+  flyToPresetLocation(overviewViewer, 'lisbon', {
     viewMode: 'overview',
     onComplete: () => overviewEvents.push('complete'),
     onCancel: () => overviewEvents.push('cancel'),
@@ -561,7 +561,7 @@ test('city and landmark flights expose completion and cancellation hooks', () =>
 
   const landmarkViewer = stubViewer();
   const landmarkEvents = [];
-  flyToPresetLocation(landmarkViewer, 'austin', {
+  flyToPresetLocation(landmarkViewer, 'lisbon', {
     onComplete: () => landmarkEvents.push('complete'),
     onCancel: () => landmarkEvents.push('cancel'),
   });

@@ -598,6 +598,9 @@
       </div>
       <div id="cctv-frame-wrap" class="cctv-frame-wrap">
         <img id="cctv-frame" alt="CCTV feed frame" />
+        <video id="cctv-video" muted loop autoplay playsinline preload="auto" style="display:none;width:100%;height:100%;object-fit:cover;"></video>
+        <iframe id="cctv-embed" frameborder="0" allow="autoplay; encrypted-media; fullscreen" allowfullscreen style="display:none;width:100%;height:100%;border:none;"></iframe>
+        <button id="cctv-maximize-btn" class="cctv-maximize-btn" title="Maximize preview">&nearr;</button>
       </div>
       <div id="cctv-source-badge" role="status" aria-live="polite">SOURCE · UNKNOWN</div>
       <div id="cctv-meta">Enable CCTV to load camera intersections</div>
@@ -640,6 +643,31 @@
       </div>
       <div class="cctv-summary-label">SCENE SUMMARY</div>
       <div id="cctv-summary">Enable CCTV to start camera-linked intelligence summaries.</div>
+    </div>
+  </div>
+
+  <!-- Properties Panel -->
+  <div id="properties-panel" class="panel-collapsible collapsed" data-panel-id="properties-panel">
+    <div class="panel-glow"></div>
+    <div class="properties-panel-inner">
+      <div class="panel-header">
+        <span class="panel-title">PROPERTIES</span>
+        <span class="panel-divider"></span>
+        <button class="panel-collapse-btn" data-collapse-target="properties-panel" title="Collapse panel">+</button>
+      </div>
+      <div id="properties-status">Enable Properties to load Portuguese listings</div>
+      <div id="properties-photo-wrap" class="properties-photo-wrap">
+        <img id="properties-photo" alt="Property photo" />
+        <button id="properties-photo-prev" class="properties-photo-nav properties-photo-prev" title="Previous photo">&#8249;</button>
+        <button id="properties-photo-next" class="properties-photo-nav properties-photo-next" title="Next photo">&#8250;</button>
+        <span id="properties-photo-counter" class="properties-photo-counter"></span>
+      </div>
+      <div id="properties-meta" class="properties-meta"></div>
+      <div class="properties-controls">
+        <button id="properties-enable-btn" class="scene-btn">PROPERTIES OFF</button>
+        <button id="properties-fly-btn" class="scene-btn">FLY TO</button>
+        <a id="properties-link" class="scene-btn" target="_blank" rel="noopener" style="display:none;">VIEW LISTING</a>
+      </div>
     </div>
   </div>
 

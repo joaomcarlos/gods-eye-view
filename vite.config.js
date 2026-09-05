@@ -33,6 +33,7 @@ import { createHash, randomUUID } from 'node:crypto';
 import path from 'node:path';
 import { Readable } from 'node:stream';
 import https from 'node:https';
+import http from 'node:http';
 import { lookup as lookupDns } from 'node:dns/promises';
 import { directionToHeading } from './src/data/directionText.js';
 import {
@@ -3446,6 +3447,7 @@ function normalizeFeedType(value) {
   if (raw === 'mjpg') return 'mjpeg';
   if (raw === 'video') return 'mp4';
   if (raw === 'stream') return 'hls';
+  if (raw === 'youtube' || raw === 'twitch' || raw === 'iframe') return 'embed';
   return raw;
 }
 
@@ -3457,6 +3459,16 @@ function normalizeFeedType(value) {
  */
 function isVideoFeedType(feedType) {
   return feedType === 'mp4' || feedType === 'webm' || feedType === 'hls';
+}
+
+/**
+ * Check whether a normalized feed type is an iframe embed (YouTube, Twitch, etc).
+ *
+ * @param {string} feedType
+ * @returns {boolean}
+ */
+function isEmbedFeedType(feedType) {
+  return feedType === 'embed';
 }
 
 // ---------------------------------------------------------------------------
@@ -3490,6 +3502,17 @@ const TFL_JAMCAM_URL = 'https://api.tfl.gov.uk/Place/Type/JamCam';
 const TFL_IMAGE_ORIGIN = 'https://s3-eu-west-1.amazonaws.com/jamcams.tfl.gov.uk/';
 const DEFAULT_TFL_MAX_SOURCES = 250;
 const LONDON_CENTER = { lat: 51.5074, lon: -0.1278 };
+/** Via Verde / Brisa highway traffic cameras: the camera-list API is behind an
+ * ASP.NET session (requires a warmup GET to the main page to obtain
+ * ASP.NET_SessionId + _tt cookies), but the snapshot images themselves live on
+ * a public S3 bucket that needs no authentication. The API currently returns
+ * 100 cameras (A1/A2/A3/A4) and ignores pagination parameters, matching the
+ * Via Verde website's own behavior. */
+const VIAVERDE_API_URL = 'https://www.viaverde.pt/DesktopModules/Traffic/Handlers/Api.ashx';
+const VIAVERDE_MAIN_PAGE = 'https://www.viaverde.pt/ferramentas/informacao-de-transito';
+const VIAVERDE_IMAGE_ORIGIN = 'https://s3.eu-west-1.amazonaws.com/brisa-vvservices-prod-images';
+const DEFAULT_VIAVERDE_MAX_SOURCES = 100;
+const LISBON_CENTER = { lat: 38.7223, lon: -9.1393 };
 /** Camera CATALOGS change rarely; 15 min keeps multi-megabyte upstream list refetches (Austin rows.json + 4 Caltrans districts + TfL) infrequent. Frames are fetched per-request and are unaffected. */
 const CCTV_SOURCE_CACHE_MS = 15 * 60 * 1000;
 /** Per-provider catalog-fetch timeout. Bounds the worst-case refresh so one
@@ -3501,6 +3524,22 @@ const CCTV_SOURCE_FETCH_TIMEOUT_MS = 15 * 1000;
  * client refresh cadence. A bounded miss can fall through to Street View or
  * the synthetic frame instead of leaving the browser preview pending. */
 export const CCTV_FRAME_FETCH_TIMEOUT_MS = 8 * 1000;
+/**
+ * Cached HTTPS agent that skips certificate verification. Used ONLY for CCTV
+ * upstreams explicitly marked `insecureTls: true` in their source definition —
+ * real-world municipal/IP cameras routinely serve an incomplete certificate
+ * chain (e.g. Lusoponte's bridge cams), which Node's strict leaf verification
+ * rejects. The flag is per-source and operator-controlled (never derived from
+ * client input), so this never relaxes TLS for arbitrary or user-supplied URLs.
+ * @type {import('node:https').Agent|null}
+ */
+let _cctvInsecureAgent = null;
+function cctvInsecureAgent() {
+  if (!_cctvInsecureAgent) {
+    _cctvInsecureAgent = new https.Agent({ rejectUnauthorized: false, keepAlive: true });
+  }
+  return _cctvInsecureAgent;
+}
 /** @type {Array<object>} Cached merged + normalized CCTV source list. */
 let _cctvSourceCache = [];
 /** @type {number} Epoch-ms when the source cache was last refreshed. */
@@ -4116,6 +4155,130 @@ async function loadTflSourcesFromOpenData() {
 }
 
 /**
+ * Extract cookie name=value pairs from an array of Set-Cookie header values
+ * (as returned by Node fetch's `headers.getSetCookie()`). Only the cookie
+ * name and value are kept; attributes (Path, HttpOnly, etc.) are discarded.
+ *
+ * @param {string[]} setCookieHeaders
+ * @returns {string} A single "name1=val1; name2=val2" Cookie header value.
+ */
+function parseCookiesFromSetCookie(setCookieHeaders) {
+  const pairs = [];
+  for (const header of setCookieHeaders) {
+    const semi = header.indexOf(';');
+    const pair = semi >= 0 ? header.slice(0, semi) : header;
+    const trimmed = pair.trim();
+    if (trimmed) pairs.push(trimmed);
+  }
+  return pairs.join('; ');
+}
+
+/**
+ * Fetch and parse Brisa/Via Verde highway traffic camera sources.
+ *
+ * The Via Verde camera-list API is behind an ASP.NET session: a warmup GET
+ * to the main traffic-info page is required to obtain the ASP.NET_SessionId
+ * and _tt cookies, which are then sent on the API request. The API returns
+ * up to 100 cameras (A1/A2/A3/A4 highways) with GPS coordinates and a
+ * direct S3 snapshot URL. The S3 images are publicly accessible and need
+ * no session cookies, so they're used directly as snapshotUrl.
+ *
+ * @returns {Promise<Array<object>>} Normalized camera source objects.
+ */
+async function loadViaVerdeSourcesFromApi() {
+  const userAgent = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/143.0.0.0 Safari/537.36';
+  try {
+    // Step 1: warmup GET to obtain session cookies (ASP.NET_SessionId + _tt).
+    const warmup = await fetch(VIAVERDE_MAIN_PAGE, {
+      headers: { 'User-Agent': userAgent, Accept: 'text/html' },
+      redirect: 'follow',
+      signal: AbortSignal.timeout(CCTV_SOURCE_FETCH_TIMEOUT_MS),
+    });
+    if (!warmup.ok) {
+      console.warn('[CCTV] Via Verde warmup request failed:', warmup.status);
+      return [];
+    }
+    // Drain the body so the connection can be reused.
+    await warmup.text().catch(() => {});
+    const setCookies = typeof warmup.headers.getSetCookie === 'function'
+      ? warmup.headers.getSetCookie()
+      : [];
+    const cookieHeader = parseCookiesFromSetCookie(setCookies);
+    if (!cookieHeader) {
+      console.warn('[CCTV] Via Verde warmup returned no cookies');
+      return [];
+    }
+
+    // Step 2: call the camera-list API with the session cookies.
+    const apiUrl = `${VIAVERDE_API_URL}?action=cameras&lang=pt-PT&_=${Date.now()}`;
+    const apiResp = await fetch(apiUrl, {
+      headers: {
+        'User-Agent': userAgent,
+        Accept: 'application/json',
+        Referer: VIAVERDE_MAIN_PAGE,
+        Cookie: cookieHeader,
+      },
+      signal: AbortSignal.timeout(CCTV_SOURCE_FETCH_TIMEOUT_MS),
+    });
+    if (!apiResp.ok) {
+      console.warn('[CCTV] Via Verde API request failed:', apiResp.status);
+      return [];
+    }
+    const data = await apiResp.json();
+    const items = Array.isArray(data?.Items) ? data.Items : (Array.isArray(data) ? data : []);
+    if (!items.length) return [];
+
+    const cameras = [];
+    for (const item of items) {
+      if (!item || typeof item !== 'object') continue;
+      const camId = toFiniteNumber(item.id);
+      if (!Number.isFinite(camId)) continue;
+      const coords = item.coordinates || {};
+      const lat = toFiniteNumber(coords.latitude);
+      const lon = toFiniteNumber(coords.longitude);
+      if (!Number.isFinite(lat) || !Number.isFinite(lon)) continue;
+      const imageUrl = String(item.imageUrl || '');
+      if (!imageUrl.startsWith(VIAVERDE_IMAGE_ORIGIN)) continue;
+
+      const cameraId = `viaverde-${camId}`;
+      const roadName = String(item.roadName || '').trim();
+      const name = String(item.name || `${roadName} #${camId}`).trim();
+
+      cameras.push({
+        id: cameraId,
+        name,
+        city: 'Lisbon',
+        cityId: 'lisbon',
+        provider: 'Via Verde / Brisa',
+        lat,
+        lon,
+        headingDeg: fallbackHeadingFromId(cameraId),
+        headingConfidence: 'low',
+        pitchDeg: -12,
+        fovDeg: 55,
+        rangeM: 300,
+        mountHeightM: 12,
+        groundElevationM: 10,
+        feedType: 'image',
+        url: imageUrl,
+        snapshotUrl: imageUrl,
+        sourceKind: 'viaverde-brisa',
+        license: 'Via Verde / Brisa (viaverde.pt) — public traffic camera snapshot',
+      });
+    }
+
+    const maxRaw = Number(process.env.CCTV_VIAVERDE_MAX_SOURCES || DEFAULT_VIAVERDE_MAX_SOURCES);
+    const maxCount = Number.isFinite(maxRaw) ? Math.max(8, Math.min(200, Math.floor(maxRaw))) : DEFAULT_VIAVERDE_MAX_SOURCES;
+    const prioritized = prioritizeSources(cameras, maxCount, [LISBON_CENTER]);
+    console.log(`[CCTV] Loaded Via Verde/Brisa sources: ${cameras.length} available (using nearest ${prioritized.length} to Lisbon)`);
+    return prioritized;
+  } catch (error) {
+    console.warn('[CCTV] Via Verde/Brisa download error:', error?.message || error);
+    return [];
+  }
+}
+
+/**
  * Normalize a raw CCTV source item into a canonical shape with safe defaults.
  *
  * @param {object} item - Raw source from file, env, or Austin Open Data.
@@ -4148,6 +4311,10 @@ function normalizeSourceItem(item) {
     // badge can distinguish them from raw automated priors (e.g. Austin Open
     // Data, which never sets this field). Passed through as-is to the client.
     poseSource: item.poseSource === 'curated' ? 'curated' : undefined,
+    // Per-source opt-in to skip TLS verification for the upstream snapshot
+    // fetch. Used for real-world cams that serve an incomplete certificate
+    // chain (e.g. Lusoponte bridge cams). Defaults to false (strict TLS).
+    insecureTls: item.insecureTls === true,
   };
 }
 
@@ -4191,10 +4358,17 @@ async function refreshCctvSources() {
   // Austin-only fetch, now governing all three. Each pack fails independently.
   const needsLiveSources = forceAustin || ((fromFile.length + fromEnv.length) === 0 && preferAustin);
   const tflEnabled = String(process.env.CCTV_TFL_ENABLED || '1').trim() !== '0';
+  // Via Verde/Brisa highway cameras load independently of the needsLiveSources
+  // gate: they're a Portugal-specific live source meant to complement the
+  // static Portugal file pack (beachcams + bridge cams), not replace it.
+  // Default is '0' so it only loads when explicitly enabled (e.g. the Portugal
+  // dev script sets CCTV_VIAVERDE_ENABLED=1).
+  const viaVerdeEnabled = String(process.env.CCTV_VIAVERDE_ENABLED || '0').trim() === '1';
 
   let fromAustin = [];
   let fromCaltrans = [];
   let fromTfl = [];
+  let fromViaVerde = [];
   if (needsLiveSources) {
     const [austinResult, caltransResult, tflResult] = await Promise.allSettled([
       loadAustinSourcesFromOpenData(),
@@ -4205,8 +4379,12 @@ async function refreshCctvSources() {
     fromCaltrans = caltransResult.status === 'fulfilled' ? caltransResult.value : [];
     fromTfl = tflResult.status === 'fulfilled' ? tflResult.value : [];
   }
+  if (viaVerdeEnabled) {
+    const vvResult = await Promise.allSettled([loadViaVerdeSourcesFromApi()]);
+    fromViaVerde = vvResult[0].status === 'fulfilled' ? vvResult[0].value : [];
+  }
   // Live sources first so file/env overrides win on duplicate IDs (Map last-write).
-  const merged = [...fromAustin, ...fromCaltrans, ...fromTfl, ...fromFile, ...fromEnv];
+  const merged = [...fromAustin, ...fromCaltrans, ...fromTfl, ...fromViaVerde, ...fromFile, ...fromEnv];
 
   // Deduplicate by camera ID (last-write wins because of Map.set)
   const byId = new Map();
@@ -4367,6 +4545,138 @@ async function readCappedResponseText(upstream, maxBytes) {
   return { tooLarge: false, text };
 }
 
+/**
+ * Compute the upstream base URL for an HLS camera (the directory containing
+ * its playlist.m3u8). Segment/sub-playlist URLs in the manifest are relative
+ * to this base, so the HLS chunk proxy refetches them here.
+ *
+ * @param {object} source - Normalized CCTV source with a playlist `url`.
+ * @returns {string} Base URL ending in '/', or '' if not resolvable.
+ */
+export function resolveHlsUpstreamBase(source) {
+  const mediaUrl = source?.url;
+  if (!mediaUrl || !/^https?:\/\//i.test(mediaUrl)) return '';
+  try {
+    const parsed = new URL(mediaUrl);
+    // Strip the final path segment (e.g. "playlist.m3u8") to get the directory.
+    const dir = parsed.pathname.replace(/[^/]*$/, '');
+    return parsed.origin + dir;
+  } catch {
+    return '';
+  }
+}
+
+/**
+ * Rewrite an HLS manifest so every relative/absolute media URL routes back
+ * through the local HLS chunk proxy (`/api/cctv/hls/:id/<tail>`). This keeps
+ * segment and sub-playlist fetches same-origin (CORS-clean for hls.js and for
+ * Cesium video textures) without exposing the upstream origin to the client.
+ *
+ * Lines starting with '#' (tags) and blank lines are preserved verbatim. URI
+ * lines are resolved against `upstreamBase` first so absolute upstream URLs
+ * are also captured, then rewritten to the proxy prefix.
+ *
+ * @param {string} text - Raw manifest body from the upstream.
+ * @param {string} proxyPrefix - e.g. "/api/cctv/hls/<id>/".
+ * @param {string} upstreamBase - Upstream directory URL (no query/hash).
+ * @returns {string} Rewritten manifest body.
+ */
+export function rewriteHlsManifest(text, proxyPrefix, upstreamBase) {
+  const lines = String(text || '').split('\n');
+  const out = new Array(lines.length);
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    const trimmed = line.trim();
+    if (!trimmed) {
+      out[i] = line;
+      continue;
+    }
+    // #EXT-X-KEY / #EXT-X-MEDIA may carry a URI="..." attribute; rewrite those
+    // in place so key/rendition requests also stay same-origin.
+    if (trimmed.startsWith('#')) {
+      out[i] = rewriteHlsUriAttributes(line, proxyPrefix, upstreamBase);
+      continue;
+    }
+    out[i] = proxyPrefix + resolveHlsRelativePath(trimmed, upstreamBase);
+  }
+  return out.join('\n');
+}
+
+/**
+ * Extract the path+query (relative to upstreamBase) from a manifest URI line,
+ * resolving absolute URLs against the base first.
+ *
+ * @param {string} uri - A manifest URI line (relative or absolute).
+ * @param {string} upstreamBase - Upstream directory URL.
+ * @returns {string} Path + query + hash relative to upstreamBase.
+ */
+export function resolveHlsRelativePath(uri, upstreamBase) {
+  try {
+    const resolved = new URL(uri, upstreamBase);
+    // Strip the base origin+dir so we get a path relative to upstreamBase,
+    // preserving query/hash for the chunk proxy to forward upstream. The
+    // leading slash is removed because the proxy prefix already ends in '/'.
+    const base = new URL(upstreamBase);
+    let rel = resolved.pathname.slice(base.pathname.length).replace(/^\/+/, '');
+    return rel + (resolved.search || '') + (resolved.hash || '');
+  } catch {
+    return uri;
+  }
+}
+
+/**
+ * Rewrite URI="..." attributes inside HLS tag lines (e.g. #EXT-X-KEY,
+ * #EXT-X-MEDIA) to route through the chunk proxy.
+ *
+ * @param {string} line - A tag line.
+ * @param {string} proxyPrefix - e.g. "/api/cctv/hls/<id>/".
+ * @param {string} upstreamBase - Upstream directory URL.
+ * @returns {string} Rewritten tag line.
+ */
+function rewriteHlsUriAttributes(line, proxyPrefix, upstreamBase) {
+  return line.replace(/URI="([^"]+)"/g, (_match, uri) => {
+    const rel = resolveHlsRelativePath(uri, upstreamBase);
+    return `URI="${proxyPrefix}${rel}"`;
+  });
+}
+
+/**
+ * Pull the camera id and remaining tail path out of an HLS proxy pathname
+ * segment (the part after "/hls/"). The id is everything up to the first
+ * slash; the tail is the rest (may itself contain slashes).
+ *
+ * @param {string} segment - Pathname tail after "/hls/".
+ * @returns {{id:string, tail:string}}
+ */
+export function splitHlsPathSegment(segment) {
+  const decoded = decodeURIComponent(segment || '');
+  const slashIdx = decoded.indexOf('/');
+  if (slashIdx < 0) return { id: decoded, tail: '' };
+  return { id: decoded.slice(0, slashIdx), tail: decoded.slice(slashIdx + 1) };
+}
+
+/**
+ * Percent-encode each path segment of an HLS tail (the part after the camera
+ * id) so it can be safely appended to the upstream base URL. Slashes between
+ * segments are preserved; query/hash are handled by the caller (url.search).
+ *
+ * Dot-segments (`.` and `..`) are dropped to prevent path traversal: without
+ * this, a tail like `../../admin/secret` would survive encodeURIComponent
+ * (dots aren't encoded) and let a crafted proxy request escape the camera's
+ * upstream directory after URL normalization. Empty segments are also dropped
+ * so a leading or double slash can't be abused the same way.
+ *
+ * @param {string} tail - Decoded tail path (e.g. "chunks.m3u8" or "a/b.ts").
+ * @returns {string} Encoded tail safe to concatenate after the upstream base.
+ */
+export function encodeHlsTailPath(tail) {
+  return String(tail || '')
+    .split('/')
+    .filter((seg) => seg && seg !== '.' && seg !== '..')
+    .map((seg) => encodeURIComponent(seg))
+    .join('/');
+}
+
 async function proxyMediaResponse(res, upstream, { sourceHeader = 'upstream' } = {}) {
   const contentType = upstream.headers.get('content-type') || 'application/octet-stream';
   const cacheControl = upstream.headers.get('cache-control') || 'no-store';
@@ -4424,8 +4734,15 @@ async function proxyMediaResponse(res, upstream, { sourceHeader = 'upstream' } =
 export async function fetchCctvImageFromUpstream(url, {
   fetchImpl = fetch,
   timeoutMs = CCTV_FRAME_FETCH_TIMEOUT_MS,
+  insecureTls = false,
 } = {}) {
   if (!url || !/^https?:\/\//i.test(url)) return null;
+  // Sources flagged insecureTls use a node:https request with verification
+  // disabled (see cctvInsecureAgent). Global fetch can't take a node Agent, so
+  // this is a separate code path; the default (secure) path is unchanged.
+  if (insecureTls) {
+    return fetchImageBufferInsecure(url, timeoutMs);
+  }
   const controller = new AbortController();
   const timeoutId = setTimeout(() => {
     controller.abort(new DOMException('CCTV upstream frame fetch timed out', 'TimeoutError'));
@@ -4446,6 +4763,113 @@ export async function fetchCctvImageFromUpstream(url, {
     return null;
   } finally {
     clearTimeout(timeoutId);
+  }
+}
+
+/**
+ * Fetch an upstream CCTV snapshot over node:http(s) with TLS verification
+ * disabled, for sources explicitly marked `insecureTls`. Follows up to 4
+ * redirects, honors a bounded timeout, and returns only image/* responses.
+ *
+ * @param {string} url - http(s) URL to fetch.
+ * @param {number} timeoutMs - Abort budget.
+ * @param {number} [maxRedirects=4] - Redirect hop cap.
+ * @returns {Promise<{ok:true,body:Buffer,contentType:string}|null>}
+ */
+async function fetchImageBufferInsecure(url, timeoutMs, maxRedirects = 4) {
+  let target = url;
+  for (let hop = 0; hop <= maxRedirects; hop++) {
+    let parsed;
+    try {
+      parsed = new URL(target);
+    } catch {
+      return null;
+    }
+    const client = parsed.protocol === 'https:' ? https : http;
+    const agent = parsed.protocol === 'https:' ? cctvInsecureAgent() : undefined;
+    const body = await new Promise((resolve) => {
+      const req = client.get(
+        target,
+        { agent, headers: { 'User-Agent': 'gods-eye-view-cctv-proxy/1.0' } },
+        (resp) => {
+          if (resp.statusCode && resp.statusCode >= 300 && resp.statusCode < 400 && resp.headers.location) {
+            resp.resume(); // drain
+            resolve({ redirect: resp.headers.location });
+            return;
+          }
+          if (!resp.statusCode || resp.statusCode < 200 || resp.statusCode >= 300) {
+            resp.resume();
+            resolve(null);
+            return;
+          }
+          const contentType = resp.headers['content-type'] || '';
+          if (!contentType.startsWith('image/')) {
+            resp.resume();
+            resolve(null);
+            return;
+          }
+          const chunks = [];
+          resp.on('data', (c) => chunks.push(c));
+          resp.on('end', () => resolve({ ok: true, body: Buffer.concat(chunks), contentType }));
+          resp.on('error', () => resolve(null));
+        }
+      );
+      req.on('error', () => resolve(null));
+      req.setTimeout(timeoutMs, () => {
+        req.destroy(new Error('CCTV insecure frame fetch timed out'));
+        resolve(null);
+      });
+    });
+    if (!body) return null;
+    if (body.redirect) {
+      target = new URL(body.redirect, target).toString();
+      continue;
+    }
+    return body;
+  }
+  return null;
+}
+
+/**
+ * Extract a single still frame from an HLS stream using ffmpeg.
+ *
+ * Fetches the HLS manifest, follows it to the first available segment, and
+ * decodes one video frame to JPEG. Used by the /frame/ endpoint for HLS-only
+ * cameras (e.g. MEO Beachcam) that have no static snapshot URL — without this,
+ * the CCTV panel and ambient cards can only show a synthetic SVG placeholder.
+ *
+ * ffmpeg reads the manifest URL directly (it handles .m3u8 → segment → decode
+ * internally), so we pass the original upstream URL, not the proxy URL. A
+ * bounded timeout via -timeout prevents a hung upstream from blocking the
+ * frame endpoint.
+ *
+ * @param {string} manifestUrl - Direct upstream HLS manifest URL.
+ * @param {number} timeoutMs - Abort budget (passed as ffmpeg -timeout seconds).
+ * @returns {Promise<{ok:true,body:Buffer,contentType:string}|null>}
+ */
+async function fetchHlsFrameViaFfmpeg(manifestUrl, timeoutMs = 12 * 1000) {
+  if (!manifestUrl || !/^https?:\/\//i.test(manifestUrl)) return null;
+  const timeoutSec = Math.max(3, Math.ceil(timeoutMs / 1000));
+  try {
+    const result = spawnSync('ffmpeg', [
+      '-hide_banner', '-loglevel', 'error',
+      '-timeout', String(timeoutSec * 1000000), // microseconds (ffmpeg -timeout is µs for HTTP)
+      '-i', manifestUrl,
+      '-frames:v', '1',
+      '-vf', 'scale=640:-2',
+      '-f', 'image2', '-vcodec', 'mjpeg', '-q:v', '3',
+      'pipe:1',
+    ], {
+      timeout: timeoutMs + 3000, // hard kill buffer beyond the internal timeout
+      encoding: null,
+      maxBuffer: 2 * 1024 * 1024,
+    });
+    if (result.status !== 0 || !result.stdout || result.stdout.length === 0) {
+      return null;
+    }
+    return { ok: true, body: result.stdout, contentType: 'image/jpeg' };
+  } catch {
+    return null;
   }
 }
 
@@ -4500,6 +4924,7 @@ function cctvProxy() {
       mediaUrl: isVideoFeedType(feedType)
         ? `/api/cctv/media/${encodeURIComponent(cameraId)}`
         : null,
+      embedUrl: isEmbedFeedType(feedType) ? (source?.url || '') : null,
       frameUrl: `/api/cctv/frame/${encodeURIComponent(cameraId)}`,
       provider: source?.provider || '',
       sourceKind: source?.sourceKind || (source?.url ? 'configured' : 'fallback'),
@@ -4549,26 +4974,32 @@ function cctvProxy() {
 
           if (url.pathname === '/sources') {
             const body = {
-              sources: sources.map((source) => ({
-                id: source.id,
-                name: source.name,
-                city: source.city,
-                cityId: source.cityId,
-                provider: source.provider,
-                lat: source.lat,
-                lon: source.lon,
-                headingDeg: source.headingDeg,
-                headingConfidence: source.headingConfidence || '',
-                pitchDeg: source.pitchDeg,
-                fovDeg: source.fovDeg,
-                rangeM: source.rangeM,
-                mountHeightM: source.mountHeightM,
-                groundElevationM: source.groundElevationM,
-                feedType: normalizeFeedType(source.feedType),
-                sourceKind: source.sourceKind || (source.url ? 'configured' : 'fallback'),
-                poseSource: source.poseSource,
-                license: source.license,
-              })),
+              sources: sources.map((source) => {
+                const ft = normalizeFeedType(source.feedType);
+                return {
+                  id: source.id,
+                  name: source.name,
+                  city: source.city,
+                  cityId: source.cityId,
+                  provider: source.provider,
+                  lat: source.lat,
+                  lon: source.lon,
+                  headingDeg: source.headingDeg,
+                  headingConfidence: source.headingConfidence || '',
+                  pitchDeg: source.pitchDeg,
+                  fovDeg: source.fovDeg,
+                  rangeM: source.rangeM,
+                  mountHeightM: source.mountHeightM,
+                  groundElevationM: source.groundElevationM,
+                  feedType: ft,
+                  // Embed feeds need their URL client-side (YouTube/Twitch iframe src).
+                  // Other feed types keep their URL server-side only (proxy via /media/:id).
+                  url: ft === 'embed' ? (source.url || '') : undefined,
+                  sourceKind: source.sourceKind || (source.url ? 'configured' : 'fallback'),
+                  poseSource: source.poseSource,
+                  license: source.license,
+                };
+              }),
             };
             res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
             res.end(JSON.stringify(body));
@@ -4595,6 +5026,20 @@ function cctvProxy() {
             const source = sourceById.get(cameraId);
             const mediaUrl = source?.url || '';
             const feedType = normalizeFeedType(source?.feedType || 'image');
+
+            // Embed feeds (YouTube, Twitch, etc.) are rendered client-side via
+            // an iframe — they must not be proxied through the media endpoint.
+            if (isEmbedFeedType(feedType)) {
+              setHealth(cameraId, {
+                status: 'ok',
+                sourceKind: 'embed',
+                label: source?.provider || 'Embed feed',
+                message: 'Embed feed (iframe)',
+              });
+              res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
+              res.end(JSON.stringify({ embedUrl: mediaUrl }));
+              return;
+            }
 
             if (!mediaUrl || !/^https?:\/\//i.test(mediaUrl)) {
               setHealth(cameraId, {
@@ -4625,6 +5070,32 @@ function cctvProxy() {
                 });
                 res.writeHead(upstream.status, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
                 res.end(JSON.stringify({ error: `Upstream returned ${upstream.status}` }));
+                return;
+              }
+
+              // HLS: rewrite the manifest so segment/sub-playlist URLs route
+              // back through the local chunk proxy (/api/cctv/hls/:id/<tail>).
+              // This keeps hls.js fetches same-origin (CORS-clean for Cesium
+              // video textures) and avoids exposing the upstream origin.
+              if (feedType === 'hls' || contentType.includes('mpegurl')) {
+                const base = resolveHlsUpstreamBase(source);
+                const proxyPrefix = `/api/cctv/hls/${encodeURIComponent(cameraId)}/`;
+                const raw = await upstream.text();
+                const rewritten = base
+                  ? rewriteHlsManifest(raw, proxyPrefix, base)
+                  : raw;
+                setHealth(cameraId, {
+                  status: 'ok',
+                  sourceKind: 'live',
+                  label: source?.provider || 'Configured source',
+                  message: 'Live HLS stream connected',
+                });
+                res.writeHead(200, {
+                  'Content-Type': 'application/vnd.apple.mpegurl',
+                  'Cache-Control': 'no-store',
+                  'X-CCTV-Source': 'live-media',
+                });
+                res.end(rewritten);
                 return;
               }
 
@@ -4661,6 +5132,71 @@ function cctvProxy() {
             }
           }
 
+          // HLS chunk/sub-playlist proxy: hls.js fetches every segment and
+          // child manifest here (the /media/ handler rewrote manifest URLs to
+          // this prefix). The tail path + query are forwarded to the camera's
+          // upstream base; child manifests are rewritten again, segments are
+          // piped through verbatim. Only server-registered upstream bases are
+          // used — the tail is never interpreted as an arbitrary URL (no SSRF).
+          if (url.pathname.startsWith('/hls/')) {
+            const { id: cameraId, tail } = splitHlsPathSegment(url.pathname.replace('/hls/', ''));
+            const source = sourceById.get(cameraId);
+            const base = resolveHlsUpstreamBase(source);
+            if (!source || !base || !tail) {
+              res.writeHead(404, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
+              res.end(JSON.stringify({ error: 'Unknown HLS camera' }));
+              return;
+            }
+            // Defense-in-depth: reject any tail containing dot-segments before
+            // encoding. encodeHlsTailPath already filters them, but this guard
+            // ensures a future regression there can't reopen path traversal.
+            if (/(^|\/)\.\.?(\/|$)/.test(tail)) {
+              res.writeHead(400, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
+              res.end(JSON.stringify({ error: 'Invalid HLS path' }));
+              return;
+            }
+            // Re-encode the tail (it was decoded by splitHlsPathSegment) and
+            // re-append the original query string so nimblesessionid etc. are
+            // forwarded upstream verbatim.
+            const encodedTail = encodeHlsTailPath(tail);
+            const upstreamUrl = base + encodedTail + (url.search || '');
+            try {
+              const upstream = await fetch(upstreamUrl, {
+                headers: { 'User-Agent': 'gods-eye-view-cctv-proxy/1.0' },
+              });
+              const contentType = upstream.headers.get('content-type') || '';
+              if (!upstream.ok) {
+                res.writeHead(upstream.status, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
+                res.end(JSON.stringify({ error: `Upstream returned ${upstream.status}` }));
+                return;
+              }
+              if (contentType.includes('mpegurl') || tail.endsWith('.m3u8')) {
+                const proxyPrefix = `/api/cctv/hls/${encodeURIComponent(cameraId)}/`;
+                const raw = await upstream.text();
+                const rewritten = rewriteHlsManifest(raw, proxyPrefix, base);
+                res.writeHead(200, {
+                  'Content-Type': 'application/vnd.apple.mpegurl',
+                  'Cache-Control': 'no-store',
+                  'X-CCTV-Source': 'live-media',
+                });
+                res.end(rewritten);
+                return;
+              }
+              await proxyMediaResponse(res, upstream, { sourceHeader: 'live-media' });
+              return;
+            } catch (error) {
+              setHealth(cameraId, {
+                status: 'degraded',
+                sourceKind: 'upstream',
+                label: source?.provider || 'Configured source',
+                message: error?.message || 'HLS chunk fetch failed',
+              });
+              res.writeHead(502, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
+              res.end(JSON.stringify({ error: 'HLS chunk proxy failed' }));
+              return;
+            }
+          }
+
           if (!url.pathname.startsWith('/frame/')) {
             res.writeHead(404, { 'Content-Type': 'application/json' });
             res.end(JSON.stringify({ error: 'not found' }));
@@ -4683,7 +5219,9 @@ function cctvProxy() {
             source?.snapshotUrl
             || (!isVideoFeedType(normalizeFeedType(source?.feedType)) ? source?.url : '');
 
-          const upstreamImage = await fetchCctvImageFromUpstream(upstreamCandidate);
+          const upstreamImage = await fetchCctvImageFromUpstream(upstreamCandidate, {
+            insecureTls: source?.insecureTls === true,
+          });
           if (upstreamImage?.ok) {
             setHealth(cameraId, {
               status: 'ok',
@@ -4698,6 +5236,29 @@ function cctvProxy() {
             });
             res.end(upstreamImage.body);
             return;
+          }
+
+          // HLS cameras have no static snapshot URL — extract a single frame
+          // from the live HLS stream via ffmpeg. This powers the CCTV panel
+          // preview and ambient card thumbnails for HLS-only feeds (MEO
+          // Beachcam). Falls through to Street View / synthetic on failure.
+          if (isVideoFeedType(normalizeFeedType(source?.feedType)) && source?.url) {
+            const hlsFrame = await fetchHlsFrameViaFfmpeg(source.url, CCTV_FRAME_FETCH_TIMEOUT_MS);
+            if (hlsFrame?.ok) {
+              setHealth(cameraId, {
+                status: 'ok',
+                sourceKind: 'live',
+                label: source?.provider || 'Configured source',
+                message: 'Live HLS frame captured',
+              });
+              res.writeHead(200, {
+                'Content-Type': hlsFrame.contentType,
+                'Cache-Control': 'no-store',
+                'X-CCTV-Source': 'live-hls-frame',
+              });
+              res.end(hlsFrame.body);
+              return;
+            }
           }
 
           const sv = await streetViewFallback({ lat, lon, heading, fov, pitch });
@@ -7417,6 +7978,60 @@ function normalizeAisTimestamp(value) {
  * keys exist. Prod builds never register this middleware (apply: 'serve'), so
  * the panel's status fetch fails and the client removes the whole surface.
  */
+
+/**
+ * 16. Properties — Minha Morada API proxy for Portuguese real estate listings.
+ *     Free public API (100 req/hour per IP). Server-side proxy keeps any
+ *     future API key private and normalizes CORS.
+ */
+function propertiesProxy() {
+  const API_BASE = 'https://minhamorada.pt/api/v1';
+  const cache = new Map();
+  const CACHE_TTL = 5 * 60 * 1000;
+
+  return {
+    name: 'properties-proxy',
+    configureServer(server) {
+      server.middlewares.use('/api/properties', async (req, res) => {
+        const url = new URL(req.url || '/', 'http://localhost');
+        try {
+          const cacheKey = url.pathname + url.search;
+          const cached = cache.get(cacheKey);
+          if (cached && Date.now() - cached.ts < CACHE_TTL) {
+            res.setHeader('Content-Type', 'application/json');
+            res.end(JSON.stringify(cached.data));
+            return;
+          }
+
+          // The middleware strips the matched /api/properties prefix, so
+          // req.url is typically just "?params" or "/?params". Reconstruct
+          // the full upstream path: /api/v1/properties + query string.
+          const upstream = new URL(API_BASE + '/properties' + url.search);
+          const resp = await fetch(upstream);
+          const rateLimit = resp.headers.get('X-RateLimit-Remaining');
+          if (rateLimit !== null) {
+            res.setHeader('X-RateLimit-Remaining', rateLimit);
+          }
+          if (!resp.ok) {
+            res.statusCode = resp.status;
+            res.setHeader('Content-Type', 'application/json');
+            res.end(JSON.stringify({ error: `Minha Morada API HTTP ${resp.status}` }));
+            return;
+          }
+          const data = await resp.json();
+          cache.set(cacheKey, { ts: Date.now(), data });
+          res.setHeader('Content-Type', 'application/json');
+          res.end(JSON.stringify(data));
+        } catch (e) {
+          res.statusCode = 502;
+          res.setHeader('Content-Type', 'application/json');
+          res.end(JSON.stringify({ error: 'Properties proxy error', detail: e?.message || String(e) }));
+        }
+      });
+    },
+  };
+}
+
 function keySetupEndpoint() {
   const respond = (res, statusCode, payload) => {
     res.statusCode = statusCode;
@@ -7696,6 +8311,7 @@ export default defineConfig(({ mode }) => {
       trackBackfillProxies(),
       openAiRealtimeProxy(),
       googlePlacesContextProxy(),
+      propertiesProxy(),
       keySetupEndpoint(),
     ],
     server: {

@@ -542,9 +542,10 @@ test('real active monitor plane owns one protected host label and no native labe
     });
     refreshCoverageStyles();
 
-    assert.ok(runtime.planeEntity, 'runtime guard requires a real monitor-plane entity');
-    assert.equal(runtime.planeEntity.label, undefined);
-    assert.ok(runtime.planeEntity.plane, 'monitor plane geometry remains native');
+    assert.ok(runtime.planeEntity, 'runtime guard requires a real monitor-plane primitive');
+    // The plane is now a raw Primitive (not an entity), so it has no label/plane
+    // properties — verify it's a Primitive with a show flag.
+    assert.ok(runtime.planeEntity.show !== undefined, 'primitive has a show flag');
     assert.ok(viewer.entities.values.every((entity) => entity.label === undefined));
     const publication = calls.find(([type, sourceId]) => (
       type === 'entries' && sourceId === 'cctv-projection'

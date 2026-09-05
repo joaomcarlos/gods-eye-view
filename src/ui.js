@@ -62,6 +62,7 @@ import militaryFlightsLayer from './data/militaryFlights.js';
 import { isTr3b, toggleTr3b } from './data/tr3bRegistry.js';
 import satellitesLayer from './data/satellites.js';
 import cctvLayer from './data/cctv.js';
+import propertiesLayer from './data/properties.js';
 import radioLayer, {
   buildRadioTunerTicks,
   radioTunerCommitSlot,
@@ -2345,12 +2346,32 @@ export class StyleManager {
     this._cctvCalibSaveBtn = document.getElementById('cctv-calib-save-btn');
     this._cctvCalibResetBtn = document.getElementById('cctv-calib-reset-btn');
     this._cctvFrame = document.getElementById('cctv-frame');
+    this._cctvVideo = document.getElementById('cctv-video');
+    this._cctvEmbed = document.getElementById('cctv-embed');
     this._cctvFrameWrap = document.getElementById('cctv-frame-wrap');
     this._cctvFrameRequestToken = 0;
     this._cctvFramePreloader = null;
+    this._cctvPanelHls = null;
+    this._cctvMaximizeBtn = document.getElementById('cctv-maximize-btn');
+    this._cctvMaximizeBackdrop = null;
+    this._initCctvMaximize();
     this._cctvSourceBadge = document.getElementById('cctv-source-badge');
     this._cctvMeta = document.getElementById('cctv-meta');
     this._cctvSummary = document.getElementById('cctv-summary');
+    // Properties panel elements
+    this._propertiesPanel = document.getElementById('properties-panel');
+    this._propertiesStatus = document.getElementById('properties-status');
+    this._propertiesPhoto = document.getElementById('properties-photo');
+    this._propertiesPhotoWrap = document.getElementById('properties-photo-wrap');
+    this._propertiesPhotoPrev = document.getElementById('properties-photo-prev');
+    this._propertiesPhotoNext = document.getElementById('properties-photo-next');
+    this._propertiesPhotoCounter = document.getElementById('properties-photo-counter');
+    this._propertiesMeta = document.getElementById('properties-meta');
+    this._propertiesEnableBtn = document.getElementById('properties-enable-btn');
+    this._propertiesFlyBtn = document.getElementById('properties-fly-btn');
+    this._propertiesLink = document.getElementById('properties-link');
+    this._propertiesPhotoIndex = 0;
+    this._propertiesUnsubscribe = null;
     this._shareBtn = document.getElementById('share-btn');
     this._clearSelectedLayersBtn = document.getElementById('clear-selected-layers');
     this._globalLoadingStatus = document.getElementById('global-loading-status');
@@ -4488,6 +4509,16 @@ export class StyleManager {
     if (typeof cctvLayer.getUIState === 'function') {
       this._renderCctvState(cctvLayer.getUIState());
     }
+    if (this._propertiesUnsubscribe) {
+      this._propertiesUnsubscribe();
+      this._propertiesUnsubscribe = null;
+    }
+    if (typeof propertiesLayer.subscribe === 'function') {
+      this._propertiesUnsubscribe = propertiesLayer.subscribe((state) => {
+        this._renderPropertiesState(state);
+      });
+    }
+    this._initPropertiesPanel();
     if (this._radioUnsubscribe) {
       this._radioUnsubscribe();
       this._radioUnsubscribe = null;
@@ -6235,12 +6266,111 @@ export class StyleManager {
   }
 
   /**
+   * Wires the maximize button on the CCTV preview. Toggles a fixed overlay
+   * centered on the viewport with a dark backdrop. Clicking the backdrop,
+   * pressing Escape, or clicking the button again restores the inline panel.
+   * @returns {void}
+   */
+  _initCctvMaximize() {
+    if (!this._cctvMaximizeBtn || !this._cctvFrameWrap) return;
+    this._cctvMaximizeBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      this._toggleCctvMaximize();
+    });
+  }
+
+  _toggleCctvMaximize() {
+    if (this._cctvFrameWrap.classList.contains('maximized')) {
+      this._exitCctvMaximize();
+    } else {
+      this._enterCctvMaximize();
+    }
+  }
+
+  _enterCctvMaximize() {
+    if (!this._cctvFrameWrap) return;
+    // Reparent the wrap to <body> so it escapes the panel's overflow clipping
+    // and stacking context (backdrop-filter / transform on .cctv-panel-inner
+    // would otherwise trap the fixed-positioned overlay inside the panel).
+    this._cctvFrameWrapParent = this._cctvFrameWrap.parentNode;
+    this._cctvFrameWrapSibling = this._cctvFrameWrap.nextSibling;
+    this._cctvFrameWrap.classList.add('maximized');
+    document.body.appendChild(this._cctvFrameWrap);
+    // Create a click-through backdrop so clicking outside closes the overlay.
+    this._cctvMaximizeBackdrop = document.createElement('div');
+    this._cctvMaximizeBackdrop.className = 'cctv-maximize-backdrop';
+    this._cctvMaximizeBackdrop.addEventListener('click', () => this._exitCctvMaximize());
+    document.body.appendChild(this._cctvMaximizeBackdrop);
+    // Escape also closes.
+    this._cctvMaximizeKeyHandler = (e) => {
+      if (e.key === 'Escape') this._exitCctvMaximize();
+    };
+    document.addEventListener('keydown', this._cctvMaximizeKeyHandler, { once: true });
+  }
+
+  _exitCctvMaximize() {
+    if (this._cctvFrameWrap) {
+      this._cctvFrameWrap.classList.remove('maximized');
+      // Restore the wrap to its original position in the panel.
+      if (this._cctvFrameWrapParent) {
+        if (this._cctvFrameWrapSibling) {
+          this._cctvFrameWrapParent.insertBefore(this._cctvFrameWrap, this._cctvFrameWrapSibling);
+        } else {
+          this._cctvFrameWrapParent.appendChild(this._cctvFrameWrap);
+        }
+      }
+      this._cctvFrameWrapParent = null;
+      this._cctvFrameWrapSibling = null;
+    }
+    if (this._cctvMaximizeBackdrop) {
+      this._cctvMaximizeBackdrop.remove();
+      this._cctvMaximizeBackdrop = null;
+    }
+    if (this._cctvMaximizeKeyHandler) {
+      document.removeEventListener('keydown', this._cctvMaximizeKeyHandler);
+      this._cctvMaximizeKeyHandler = null;
+    }
+  }
+
+  /**
+   * Tears down the panel's HLS player (if any) and hides the video element.
+   * @returns {void}
+   */
+  _teardownCctvPanelHls() {
+    if (this._cctvPanelHls) {
+      try { this._cctvPanelHls.destroy(); } catch { /* no-op */ }
+      this._cctvPanelHls = null;
+    }
+    if (this._cctvVideo) {
+      this._cctvVideo.pause();
+      this._cctvVideo.removeAttribute('src');
+      this._cctvVideo.load();
+      this._cctvVideo.style.display = 'none';
+    }
+  }
+
+  /**
+   * Tears down the panel's embed iframe (if any) by removing the src
+   * and hiding the element.
+   * @returns {void}
+   */
+  _teardownCctvEmbed() {
+    if (this._cctvEmbed) {
+      this._cctvEmbed.removeAttribute('src');
+      this._cctvEmbed.src = 'about:blank';
+      this._cctvEmbed.style.display = 'none';
+    }
+  }
+
+  /**
    * Clears the preview and invalidates any in-flight preload.
    * @returns {void}
    */
   _clearCctvFrame() {
     this._cctvFrameRequestToken += 1;
     this._cctvFramePreloader = null;
+    this._teardownCctvPanelHls();
+    this._teardownCctvEmbed();
     if (this._cctvFrame) {
       this._cctvFrame.classList.remove('active');
       this._cctvFrame.removeAttribute('src');
@@ -6248,8 +6378,71 @@ export class StyleManager {
       this._cctvFrame.dataset.currentSrc = '';
       this._cctvFrame.dataset.loading = '';
       this._cctvFrame.dataset.error = '';
+      this._cctvFrame.style.display = '';
     }
     this._cctvFrameWrap?.classList.remove('loading', 'has-frame');
+  }
+
+  /**
+   * Starts live video playback in the panel's <video> element for HLS/mp4/
+   * webm feeds. Uses hls.js for HLS on Chrome/Firefox, native playback on
+   * Safari. Tears down any previous HLS instance first.
+   * @param {string} mediaUrl - Media proxy URL (/api/cctv/media/:id).
+   * @param {string} cameraId - Camera ID for tracking.
+   * @returns {void}
+   */
+  _startCctvPanelVideo(mediaUrl, cameraId) {
+    if (!this._cctvVideo || !mediaUrl) return;
+    this._teardownCctvPanelHls();
+    const video = this._cctvVideo;
+    video.dataset.cameraId = cameraId;
+    video.style.display = '';
+
+    const feedType = String(this._cctvState?.activeCamera?.feedType || '').toLowerCase();
+    if (feedType === 'hls') {
+      // Dynamic import keeps hls.js out of the initial bundle for non-HLS sessions.
+      import('hls.js')
+        .then((mod) => {
+          // Stale check: camera may have changed during the async import.
+          if (video.dataset.cameraId !== cameraId) return;
+          const Hls = mod.default;
+          if (Hls && Hls.isSupported()) {
+            const hls = new Hls({ enableWorker: true, lowLatencyMode: true });
+            hls.on(Hls.Events.MANIFEST_PARSED, () => {
+              video.play().catch(() => {});
+              this._cctvFrameWrap?.classList.remove('loading');
+              this._cctvFrameWrap?.classList.add('has-frame');
+            });
+            hls.on(Hls.Events.ERROR, (_event, data) => {
+              if (data?.fatal) this._cctvFrameWrap?.classList.remove('loading');
+            });
+            hls.loadSource(mediaUrl);
+            hls.attachMedia(video);
+            this._cctvPanelHls = hls;
+          } else if (video.canPlayType('application/vnd.apple.mpegurl')) {
+            // Safari: native HLS playback from the proxy URL.
+            video.src = mediaUrl;
+            video.addEventListener('canplay', () => {
+              video.play().catch(() => {});
+              this._cctvFrameWrap?.classList.remove('loading');
+              this._cctvFrameWrap?.classList.add('has-frame');
+            }, { once: true });
+          }
+        })
+        .catch(() => {
+          if (video.dataset.cameraId !== cameraId) return;
+          // Last resort: hand the proxy URL to the element.
+          video.src = mediaUrl;
+        });
+    } else {
+      // mp4/webm: native playback.
+      video.src = mediaUrl;
+      video.addEventListener('canplay', () => {
+        video.play().catch(() => {});
+        this._cctvFrameWrap?.classList.remove('loading');
+        this._cctvFrameWrap?.classList.add('has-frame');
+      }, { once: true });
+    }
   }
 
   /**
@@ -6634,24 +6827,224 @@ export class StyleManager {
     }
 
     if (this._cctvFrame) {
-      const nextSrc = enabled ? activeCamera?.frameUrl : null;
       const nextCameraId = enabled ? (activeCamera?.id || '') : '';
       const cameraChanged = this._cctvFrame.dataset.cameraId !== nextCameraId;
-      const frameLoading = this._cctvFrame.dataset.loading === 'true';
-      // A same-camera refresh waits for the current image to settle. Replacing
-      // src every 10 seconds can cancel a slow but healthy decode forever and
-      // leave SNAPSHOT · OK beside a blank/loading preview. Camera changes are
-      // immediate so navigation never waits on the prior camera's request.
-      if (nextSrc && (cameraChanged || (!frameLoading && this._cctvFrame.dataset.currentSrc !== nextSrc))) {
-        this._queueCctvFrame(nextSrc, nextCameraId, cameraChanged);
-      }
-      if (!nextSrc) {
+      const feedType = String(activeCamera?.feedType || 'image').toLowerCase();
+      const isVideoFeed = feedType === 'hls' || feedType === 'mp4' || feedType === 'webm';
+      const isEmbedFeed = feedType === 'embed';
+
+      if (!enabled || !activeCamera) {
         this._clearCctvFrame();
+      } else if (isEmbedFeed && activeCamera.embedUrl && this._cctvEmbed) {
+        // Embed feed (YouTube, Twitch, etc.): render in an <iframe>.
+        // Hide <img> and <video>, show the <iframe>.
+        if (cameraChanged) {
+          this._teardownCctvPanelHls();
+          this._cctvFrame.classList.remove('active');
+          this._cctvFrame.style.display = 'none';
+          if (this._cctvVideo) this._cctvVideo.style.display = 'none';
+          this._cctvFrame.dataset.cameraId = nextCameraId;
+          this._cctvFrameWrap?.classList.remove('loading');
+          this._cctvFrameWrap?.classList.add('has-frame');
+          this._cctvEmbed.src = activeCamera.embedUrl;
+          this._cctvEmbed.style.display = '';
+        }
+      } else if (isVideoFeed && activeCamera.mediaUrl && this._cctvVideo) {
+        // Live video feed (HLS/mp4/webm): play it in the panel's <video>
+        // element via hls.js (or native HLS on Safari). This matches the
+        // map projection's real-time playback instead of polling static
+        // frames. Hide the <img> and <iframe>, show the <video>.
+        if (cameraChanged) {
+          this._teardownCctvEmbed();
+          this._cctvFrame.classList.remove('active');
+          this._cctvFrame.style.display = 'none';
+          this._cctvFrame.dataset.cameraId = nextCameraId;
+          this._cctvFrameWrap?.classList.add('loading');
+          this._startCctvPanelVideo(activeCamera.mediaUrl, nextCameraId);
+        }
+      } else {
+        // Static image feed: use the frame URL with the existing preload-
+        // and-swap pipeline. Hide the <video> and <iframe>, show the <img>.
+        if (cameraChanged && this._cctvVideo) {
+          this._teardownCctvPanelHls();
+          this._cctvVideo.style.display = 'none';
+          this._cctvFrame.style.display = '';
+        }
+        if (cameraChanged && this._cctvEmbed) {
+          this._teardownCctvEmbed();
+          this._cctvFrame.style.display = '';
+        }
+        const nextSrc = activeCamera?.frameUrl;
+        const frameLoading = this._cctvFrame.dataset.loading === 'true';
+        if (nextSrc && (cameraChanged || (!frameLoading && this._cctvFrame.dataset.currentSrc !== nextSrc))) {
+          this._queueCctvFrame(nextSrc, nextCameraId, cameraChanged);
+        }
       }
     }
 
     this._syncCctvSourceBadge(activeCamera, enabled);
     this._typeCctvSummary(state?.summary || 'Enable CCTV to start camera-linked intelligence summaries.');
+  }
+
+  /**
+   * Initializes Properties panel event listeners (enable toggle, photo nav,
+   * fly-to, view-listing link). Called once during setup.
+   */
+  _initPropertiesPanel() {
+    this._propertiesEnableBtn?.addEventListener('click', async () => {
+      if (!this._dataManager || !this._dataManager.layers?.has('properties')) return;
+      const enabled = this._dataManager.isEnabled('properties');
+      await this._dataManager.setEnabled('properties', !enabled, { origin: 'user' });
+    });
+
+    this._propertiesFlyBtn?.addEventListener('click', () => {
+      const state = propertiesLayer.getUIState?.();
+      const id = state?.activePropertyId;
+      if (id) propertiesLayer.flyToProperty(id);
+    });
+
+    this._propertiesPhotoPrev?.addEventListener('click', () => {
+      this._cyclePropertyPhoto(-1);
+    });
+
+    this._propertiesPhotoNext?.addEventListener('click', () => {
+      this._cyclePropertyPhoto(1);
+    });
+  }
+
+  /**
+   * Cycles the property photo carousel by the given delta.
+   * @param {number} delta - +1 or -1.
+   */
+  _cyclePropertyPhoto(delta) {
+    const state = propertiesLayer.getUIState?.();
+    const photos = state?.activeProperty?.photos || [];
+    if (photos.length <= 1) return;
+    this._propertiesPhotoIndex = (this._propertiesPhotoIndex + delta + photos.length) % photos.length;
+    if (this._propertiesPhoto) {
+      this._propertiesPhoto.src = photos[this._propertiesPhotoIndex];
+    }
+    if (this._propertiesPhotoCounter) {
+      this._propertiesPhotoCounter.textContent = `${this._propertiesPhotoIndex + 1} / ${photos.length}`;
+    }
+  }
+
+  /**
+   * Formats a price in EUR using Portuguese locale conventions.
+   * @param {number|null} price - Price in EUR.
+   * @param {string} priceType - 'sale' or 'rent'.
+   * @returns {string} Formatted price string.
+   */
+  _formatPropertyPrice(price, priceType) {
+    if (price == null) return 'Preço sob consulta';
+    const formatted = new Intl.NumberFormat('pt-PT', {
+      style: 'currency',
+      currency: 'EUR',
+      maximumFractionDigits: 0,
+    }).format(price);
+    return priceType === 'rent' ? `${formatted}/mês` : formatted;
+  }
+
+  /**
+   * Full re-render of the Properties panel UI from a layer state snapshot.
+   * @param {object|null} state - Properties layer UI state.
+   */
+  _renderPropertiesState(state) {
+    const enabled = !!state?.enabled && !!this._dataManager?.isEnabled('properties');
+    const count = state?.count || 0;
+    const error = state?.error;
+    const active = state?.activeProperty;
+
+    if (this._propertiesEnableBtn) {
+      this._propertiesEnableBtn.textContent = enabled ? 'PROPERTIES ON' : 'PROPERTIES OFF';
+      this._propertiesEnableBtn.classList.toggle('active', enabled);
+    }
+
+    if (this._propertiesStatus) {
+      if (error) {
+        this._propertiesStatus.textContent = error;
+      } else if (enabled && count > 0) {
+        this._propertiesStatus.textContent = `${count} listings loaded`;
+      } else if (enabled) {
+        this._propertiesStatus.textContent = 'Loading listings…';
+      } else {
+        this._propertiesStatus.textContent = 'Enable Properties to load Portuguese listings';
+      }
+    }
+
+    if (active) {
+      // Photo
+      const photos = active.photos || [];
+      this._propertiesPhotoIndex = 0;
+      if (this._propertiesPhoto && photos.length > 0) {
+        this._propertiesPhoto.src = photos[0];
+      } else if (this._propertiesPhoto) {
+        this._propertiesPhoto.removeAttribute('src');
+      }
+      if (this._propertiesPhotoCounter) {
+        this._propertiesPhotoCounter.textContent = photos.length > 1 ? `1 / ${photos.length}` : '';
+      }
+      if (this._propertiesPhotoPrev) this._propertiesPhotoPrev.style.display = photos.length > 1 ? '' : 'none';
+      if (this._propertiesPhotoNext) this._propertiesPhotoNext.style.display = photos.length > 1 ? '' : 'none';
+
+      // Metadata
+      if (this._propertiesMeta) {
+        const features = [];
+        if (active.hasElevator) features.push('Elevador');
+        if (active.hasParking) features.push('Estacionamento');
+        if (active.hasGarden) features.push('Jardim');
+        if (active.energyCert) features.push(`CE: ${active.energyCert}`);
+
+        const details = [];
+        if (active.typology) details.push(`<span>${active.typology}</span>`);
+        if (active.areaNet != null) details.push(`<span>${active.areaNet} m²</span>`);
+        if (active.bedrooms != null) details.push(`<span>${active.bedrooms} quartos</span>`);
+        if (active.bathrooms != null) details.push(`<span>${active.bathrooms} WC</span>`);
+        if (active.floor != null) details.push(`<span>${active.floor}º andar</span>`);
+
+        const locationParts = [active.parish, active.municipality, active.district].filter(Boolean);
+
+        this._propertiesMeta.innerHTML = `
+          <div class="prop-title">${this._escapeHtml(active.title || active.typology || 'Property')}</div>
+          <div class="prop-price">${this._formatPropertyPrice(active.price, active.priceType)}</div>
+          <div class="prop-detail">${details.join('')}</div>
+          ${features.length > 0 ? `<div class="prop-features">${features.map((f) => `<span class="prop-feature-tag">${this._escapeHtml(f)}</span>`).join('')}</div>` : ''}
+          <div class="prop-location">${this._escapeHtml(locationParts.join(', '))}</div>
+        `;
+      }
+
+      // Link
+      if (this._propertiesLink && active.url) {
+        this._propertiesLink.href = active.url;
+        this._propertiesLink.style.display = '';
+      } else if (this._propertiesLink) {
+        this._propertiesLink.style.display = 'none';
+      }
+
+      // Auto-expand panel
+      if (this._propertiesPanel?.classList.contains('collapsed')) {
+        this._propertiesPanel.classList.remove('collapsed');
+        this._syncPanelCollapseButton(this._propertiesPanel);
+      }
+    } else {
+      if (this._propertiesPhoto) this._propertiesPhoto.removeAttribute('src');
+      if (this._propertiesPhotoCounter) this._propertiesPhotoCounter.textContent = '';
+      if (this._propertiesPhotoPrev) this._propertiesPhotoPrev.style.display = 'none';
+      if (this._propertiesPhotoNext) this._propertiesPhotoNext.style.display = 'none';
+      if (this._propertiesMeta) this._propertiesMeta.innerHTML = '';
+      if (this._propertiesLink) this._propertiesLink.style.display = 'none';
+    }
+  }
+
+  /**
+   * Escapes HTML special characters to prevent XSS in property metadata.
+   * @param {string} text - Raw text.
+   * @returns {string} Escaped text.
+   */
+  _escapeHtml(text) {
+    const div = document.createElement('div');
+    div.textContent = String(text);
+    return div.innerHTML;
   }
 
   /**
@@ -6777,6 +7170,16 @@ export class StyleManager {
       stack.insertBefore(this._cctvPanel, globalContextPanel);
       this._syncPanelCollapseButton(this._cctvPanel);
     }
+    if (this._propertiesPanel) {
+      this._propertiesPanel.style.removeProperty('top');
+      this._propertiesPanel.style.removeProperty('right');
+      this._propertiesPanel.style.removeProperty('bottom');
+      this._propertiesPanel.style.removeProperty('left');
+      this._propertiesPanel.style.removeProperty('z-index');
+      this._propertiesPanel.classList.remove('panel-draggable', 'panel-dragging');
+      stack.insertBefore(this._propertiesPanel, globalContextPanel);
+      this._syncPanelCollapseButton(this._propertiesPanel);
+    }
     if (this._sliderPanel) {
       this._sliderPanel.style.removeProperty('top');
       this._sliderPanel.style.removeProperty('right');
@@ -6792,7 +7195,7 @@ export class StyleManager {
         this._scheduleRightPanelLayout();
       });
       this._rightStackResizeObserver.observe(stack);
-      for (const panel of [this._ppToggles, this._cctvPanel, globalContextPanel]) {
+      for (const panel of [this._ppToggles, this._cctvPanel, this._propertiesPanel, globalContextPanel]) {
         if (panel) this._rightStackResizeObserver.observe(panel);
       }
       document.querySelectorAll(RIGHT_STACK_OBSTACLE_SELECTOR).forEach((element) => {

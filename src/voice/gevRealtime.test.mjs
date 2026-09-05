@@ -711,7 +711,7 @@ test('sibling tool calls in one response do not abort an in-flight Radio action'
     response_id: 'response-multi-tool',
     call_id: 'radio-sibling',
     name: 'control_radio',
-    arguments: '{"action":"select","locationId":"austin"}',
+    arguments: '{"action":"select","locationId":"lisbon"}',
   }));
   await Promise.resolve();
   await controller.handleRealtimeEvent(event({

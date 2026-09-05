@@ -6205,6 +6205,81 @@ body.cockpit-mode #intel-hud .hud-right-edge { right: 22px; }
   flex-shrink: 0;
 }
 
+/* Maximize button — sits in the top-right corner of the preview, only
+   visible on hover or when already maximized. */
+.cctv-maximize-btn {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  z-index: 10;
+  width: 26px;
+  height: 26px;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 6px;
+  background: rgba(0, 0, 0, 0.55);
+  color: rgba(255, 255, 255, 0.75);
+  font-size: 14px;
+  line-height: 1;
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 180ms ease, background 180ms ease;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+}
+
+.cctv-frame-wrap:hover .cctv-maximize-btn,
+.cctv-frame-wrap.maximized .cctv-maximize-btn {
+  opacity: 1;
+}
+
+.cctv-maximize-btn:hover {
+  background: rgba(0, 0, 0, 0.75);
+  color: rgba(255, 255, 255, 0.95);
+}
+
+/* Maximized state: fixed overlay filling the entire browser window. */
+.cctv-frame-wrap.maximized {
+  position: fixed;
+  top: 0;
+  left: 0;
+  transform: none;
+  width: 100vw;
+  height: 100vh;
+  min-height: 0;
+  z-index: 10000;
+  border-radius: 0;
+  border: none;
+  box-shadow: none;
+}
+
+.cctv-frame-wrap.maximized #cctv-frame {
+  aspect-ratio: auto;
+  width: 100%;
+  height: 100%;
+}
+
+.cctv-frame-wrap.maximized #cctv-video {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+
+.cctv-frame-wrap.maximized #cctv-embed {
+  width: 100%;
+  height: 100%;
+  border: none;
+}
+
+/* Click-through backdrop while maximized (click anywhere outside to close). */
+.cctv-maximize-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+  background: rgba(0, 0, 0, 0.6);
+}
+
 /* Lightweight loading shimmer while the active frame is fetching */
 .cctv-frame-wrap::after {
   content: '';
@@ -9516,4 +9591,155 @@ body.scene-playback-mode #key-setup {
   color: rgba(255, 190, 170, 1);
   border-color: rgba(255, 170, 150, 0.65);
   outline: none;
+}
+
+/* ─── Properties Panel ─────────────────────────────────────────── */
+
+.properties-panel-inner {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px 12px;
+  max-height: 60vh;
+  overflow-y: auto;
+}
+
+#properties-status {
+  font-family: var(--font-mono);
+  font-size: 9px;
+  letter-spacing: 1.4px;
+  color: rgba(180, 220, 200, 0.7);
+  text-transform: uppercase;
+}
+
+.properties-photo-wrap {
+  position: relative;
+  border-radius: 10px;
+  overflow: hidden;
+  border: 1px solid rgba(34, 197, 94, 0.2);
+  background: linear-gradient(180deg, rgba(8, 14, 19, 0.88), rgba(4, 7, 11, 0.96));
+  min-height: 160px;
+  flex-shrink: 0;
+}
+
+#properties-photo {
+  width: 100%;
+  display: block;
+  object-fit: cover;
+  aspect-ratio: 4 / 3;
+}
+
+.properties-photo-nav {
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  background: rgba(0, 0, 0, 0.6);
+  border: 1px solid rgba(34, 197, 94, 0.3);
+  color: rgba(220, 255, 230, 0.9);
+  font-size: 18px;
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.15s, border-color 0.15s;
+}
+
+.properties-photo-nav:hover {
+  background: rgba(34, 197, 94, 0.25);
+  border-color: rgba(34, 197, 94, 0.6);
+}
+
+.properties-photo-prev { left: 8px; }
+.properties-photo-next { right: 8px; }
+
+.properties-photo-counter {
+  position: absolute;
+  bottom: 8px;
+  right: 8px;
+  font-family: var(--font-mono);
+  font-size: 9px;
+  letter-spacing: 1px;
+  color: rgba(200, 255, 220, 0.8);
+  background: rgba(0, 0, 0, 0.55);
+  padding: 2px 8px;
+  border-radius: 8px;
+}
+
+.properties-meta {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  line-height: 1.6;
+  color: rgba(200, 230, 210, 0.85);
+}
+
+.properties-meta .prop-title {
+  font-size: 11px;
+  color: rgba(230, 255, 240, 0.95);
+  margin-bottom: 4px;
+  font-weight: 600;
+}
+
+.properties-meta .prop-price {
+  font-size: 14px;
+  color: #4ade80;
+  font-weight: 700;
+  margin-bottom: 4px;
+}
+
+.properties-meta .prop-detail {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 12px;
+  color: rgba(180, 220, 195, 0.75);
+}
+
+.properties-meta .prop-detail span {
+  white-space: nowrap;
+}
+
+.properties-meta .prop-features {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: 4px;
+}
+
+.properties-meta .prop-feature-tag {
+  font-size: 8px;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  padding: 2px 6px;
+  border-radius: 4px;
+  background: rgba(34, 197, 94, 0.12);
+  border: 1px solid rgba(34, 197, 94, 0.25);
+  color: rgba(180, 255, 200, 0.8);
+}
+
+.properties-meta .prop-location {
+  margin-top: 4px;
+  color: rgba(160, 200, 180, 0.65);
+  font-size: 9px;
+}
+
+.properties-controls {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.properties-controls a.scene-btn {
+  text-decoration: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+#properties-panel.collapsed .properties-photo-wrap,
+#properties-panel.collapsed #properties-meta,
+#properties-panel.collapsed .properties-controls,
+#properties-panel.collapsed #properties-status {
+  display: none;
 }

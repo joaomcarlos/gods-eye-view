@@ -200,7 +200,7 @@ test('dependent voice navigation waits for the destination viewport to arrive', 
   });
   let settled = false;
   const resultPromise = runner('fly_to_location', {
-    locationId: 'austin',
+    locationId: 'lisbon',
     waitForArrival: true,
   }).then((result) => {
     settled = true;
@@ -265,7 +265,7 @@ test('nearest-aircraft voice action serializes layer enable, arrival, refresh, a
   const runner = createGevActionRunner({ viewer, styleManager, dataManager });
   const resultPromise = runner('select_nearest_aircraft', {
     layerId: 'flights',
-    locationId: 'austin',
+    locationId: 'lisbon',
   });
   await new Promise((resolve) => setImmediate(resolve));
   assert.deepEqual(order, ['enable', 'fly'], 'Flights must turn on before navigation begins');
@@ -322,7 +322,7 @@ test('nearest-aircraft voice action refreshes an already-enabled viewport layer 
   const runner = createGevActionRunner({ viewer, styleManager, dataManager });
   const resultPromise = runner('select_nearest_aircraft', {
     layerId: 'flights',
-    locationId: 'austin',
+    locationId: 'lisbon',
   });
   await new Promise((resolve) => setImmediate(resolve));
   assert.deepEqual(order, ['enable-same-state', 'fly']);
@@ -372,7 +372,7 @@ test('fallback with zero airborne records reports enabled fallback without selec
   const runner = createGevActionRunner({ viewer, styleManager, dataManager });
   const resultPromise = runner('select_nearest_aircraft', {
     layerId: 'flights',
-    locationId: 'austin',
+    locationId: 'lisbon',
   });
   await new Promise((resolve) => setImmediate(resolve));
   completeFlight();
@@ -1763,10 +1763,10 @@ test('voice CCTV coverage writes the canonical durable coverage mode', async () 
   ]);
 });
 
-test('voice Radio resolves Austin and exposes semantic selection, volume, pause, and stop', async () => {
-  const austin = knownRadioLocation('', 'austin');
-  assert.ok(Math.abs(austin.lat - 30.31) < 0.1);
-  assert.ok(Math.abs(austin.lon + 97.75) < 0.1);
+test('voice Radio resolves Lisbon and exposes semantic selection, volume, pause, and stop', async () => {
+  const lisbon = knownRadioLocation('', 'lisbon');
+  assert.ok(Math.abs(lisbon.lat - 38.745) < 0.1);
+  assert.ok(Math.abs(lisbon.lon + 9.13) < 0.1);
 
   let enabled = false;
   const calls = [];
@@ -1818,19 +1818,19 @@ test('voice Radio resolves Austin and exposes semantic selection, volume, pause,
   let result = await controlRadio({}, dataManager, {
     action: 'play',
     category: 'news',
-    locationId: 'austin',
+    locationId: 'lisbon',
   });
   assert.equal(result.ok, true);
   assert.equal(result.radioAction, 'select');
   assert.equal(result.stationId, 'aus-news');
   assert.equal('station' in result, false);
-  assert.equal(result.requestedLocation, 'Austin');
+  assert.equal(result.requestedLocation, 'Lisbon');
   assert.equal(result.radioPlaybackRequested, true);
   assert.equal(result.audioState, 'stopped');
   assert.equal(result.lifecycleState, 'enabled');
   assert.equal(result.lifecycleUncertain, false);
   assert.equal(calls[1][1].categoryId, 'news');
-  assert.ok(Math.abs(calls[1][1].anchor.lat - austin.lat) < 0.001);
+  assert.ok(Math.abs(calls[1][1].anchor.lat - lisbon.lat) < 0.001);
   assert.deepEqual(calls[1][2], { autoplay: false });
   assert.deepEqual(calls[0], ['enabled', 'radio', true, { origin: 'voice' }]);
 
