@@ -1,6 +1,6 @@
 import * as Cesium from 'cesium';
 import { StyleManager } from './ui.js';
-import { flyToAustin } from './camera.js';
+import { flyToCity, preloadArea } from './camera.js';
 import { DataLayerManager } from './data/manager.js';
 import flightsLayer from './data/flights.js';
 import militaryFlightsLayer from './data/militaryFlights.js';
@@ -196,10 +196,47 @@ async function init() {
     const weatherEffects = null;
     const cockpitCloudEffects = initCockpitCloudEffects(viewer);
 
-    // If no share link state, do default fly-to Austin
+    // If no share link state, pre-load 3D tiles for Portuguese cities
     if (!styleManager.hasShareState) {
-      loaderStatus.textContent = 'Flying to Austin, TX...';
-      flyToAustin(viewer);
+      if (tileset) {
+        loaderStatus.textContent = 'Pre-loading Lisbon 3D tiles...';
+        // Pre-load sweep: Lisbon → Cascais → Porto → Faro, then settle on Lisbon.
+        // If the user grabs the camera mid-sweep, preloadArea resolves false
+        // and the chain stops rather than fighting for the camera.
+        (async () => {
+          const cities = [
+            ['Lisbon', { lng: -9.1393, lat: 38.7223, label: 'Lisbon' }, { sw: { lat: 38.70, lng: -9.18 }, ne: { lat: 38.79, lng: -9.08 } }],
+            ['Cascais', { lng: -9.4215, lat: 38.6975, label: 'Cascais' }, { sw: { lat: 38.68, lng: -9.45 }, ne: { lat: 38.71, lng: -9.38 } }],
+            ['Porto', { lng: -8.6291, lat: 41.1579, label: 'Porto' }, { sw: { lat: 41.14, lng: -8.66 }, ne: { lat: 41.18, lng: -8.59 } }],
+            ['Faro', { lng: -7.9304, lat: 37.0194, label: 'Faro' }, { sw: { lat: 37.00, lng: -7.96 }, ne: { lat: 37.04, lng: -7.90 } }],
+          ];
+          let completed = true;
+          for (const [name, center, bounds] of cities) {
+            loaderStatus.textContent = `Pre-loading ${name} 3D tiles...`;
+            completed = await preloadArea(viewer, center, bounds);
+            if (!completed) break;
+          }
+          if (!completed) {
+            loaderStatus.textContent = 'Ready';
+            return;
+          }
+          // Settle on Lisbon center
+          loaderStatus.textContent = 'Ready';
+          viewer.camera.flyTo({
+            destination: Cesium.Cartesian3.fromDegrees(-9.1393, 38.7223, 800),
+            orientation: {
+              heading: Cesium.Math.toRadians(15),
+              pitch: Cesium.Math.toRadians(-30),
+              roll: 0.0,
+            },
+            duration: 3.0,
+            easingFunction: Cesium.EasingFunction.CUBIC_IN_OUT,
+          });
+        })();
+      } else {
+        loaderStatus.textContent = 'Flying to Lisbon...';
+        flyToCity(viewer, { lng: -9.1393, lat: 38.7223 });
+      }
     } else {
       loaderStatus.textContent = 'Restoring shared view...';
     }

@@ -126,7 +126,6 @@ const propertiesLayer = {
       if (!_enabled) return;
       const picked = viewer.scene.pick(click.position);
       const propId = extractPickedPropertyId(picked);
-      console.log('[Properties] click — enabled:', _enabled, 'picked:', picked, 'propId:', propId, 'billboards:', _billboards?.length);
       if (propId) {
         if (isOwnedByOtherLayer('properties', PROPERTIES_PREFIX + propId)) return;
         selectProperty(propId);
@@ -142,11 +141,11 @@ const propertiesLayer = {
     _count = 0;
     _lastUpdate = null;
     _lastError = null;
-    registerPickOwner('properties', (pickedId) => typeof pickedId === 'string' && pickedId.startsWith(PROPERTIES_PREFIX));
   },
 
   enable(viewer) {
     _enabled = true;
+    registerPickOwner('properties', (pickedId) => typeof pickedId === 'string' && pickedId.startsWith(PROPERTIES_PREFIX));
     if (_dataSource) _dataSource.show = true;
     if (_billboards) _billboards.show = true;
     notifyListeners();
@@ -176,8 +175,9 @@ const propertiesLayer = {
           district,
           limit: '50',
           sort: 'scraped_at',
+          dir: 'desc',
         });
-        const resp = await fetch(`${API_ENDPOINT}?${params}`);
+        const resp = await fetch(`${API_ENDPOINT}?${params}`, { signal });
         if (!resp.ok) continue;
         const data = await resp.json();
         const listings = Array.isArray(data?.data) ? data.data : (Array.isArray(data) ? data : []);
@@ -196,16 +196,18 @@ const propertiesLayer = {
       _billboards.removeAll();
       _billboardByPropId.clear();
       for (const prop of allProperties) {
-        const position = Cesium.Cartesian3.fromDegrees(prop.lng, prop.lat, 5);
+        const position = Cesium.Cartesian3.fromDegrees(prop.lng, prop.lat);
         const bb = _billboards.add({
           id: PROPERTIES_PREFIX + prop.id,
           image: HOUSE_ICON,
           position,
           color: IDLE_COLOR,
-          width: 24,
-          height: 24,
+          width: 28,
+          height: 28,
+          heightReference: Cesium.HeightReference.CLAMP_TO_GROUND,
+          verticalOrigin: Cesium.VerticalOrigin.BOTTOM,
           disableDepthTestDistance: Number.POSITIVE_INFINITY,
-          scaleByDistance: new Cesium.NearFarScalar(200, 1.2, 5_000_000, 0.4),
+          scaleByDistance: new Cesium.NearFarScalar(500, 1.0, 2_000_000, 0.5),
         });
         _billboardByPropId.set(prop.id, bb);
       }

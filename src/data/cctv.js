@@ -1581,7 +1581,21 @@ function updatePlanePlacement(record) {
   const modelMatrix = Cesium.Transforms.eastNorthUpToFixedFrame(positions.capCenter);
   const rotation = Cesium.Matrix3.fromQuaternion(orientation);
   Cesium.Matrix4.multiplyByMatrix3(modelMatrix, rotation, modelMatrix);
-  runtime.planeEntity.modelMatrix = modelMatrix;
+  // Apply the same scale as createProjectionPlane (PlaneGeometry is 1×1).
+  const scale = Cesium.Matrix4.fromScale(
+    new Cesium.Cartesian3(geometry.halfW * 2, geometry.halfH * 2, 1),
+  );
+  Cesium.Matrix4.multiply(modelMatrix, scale, modelMatrix);
+  // Primitive.modelMatrix would move every instance in the batch — update the
+  // per-instance model matrix via getGeometryInstanceAttributes so only this
+  // camera's plane moves when geometry is refined after activation.
+  try {
+    const attrs = runtime.planeEntity.getGeometryInstanceAttributes(runtime.cameraId);
+    if (attrs) attrs.modelMatrix = Cesium.Matrix4.clone(modelMatrix);
+  } catch {
+    // Primitive not yet ready or geometry instances released — the next
+    // tick will retry via the projection loop's ensureProjectionRuntime.
+  }
   runtime.planeModelMatrix = modelMatrix;
   runtime.planeDimensions = new Cesium.Cartesian2(geometry.halfW * 2, geometry.halfH * 2);
   if (runtime.labelPosition) {
@@ -1647,6 +1661,14 @@ function createProjectionPlane(record, runtime, geometry, positions) {
   // Apply the plane orientation so the plane faces the camera's heading/pitch.
   const rotation = Cesium.Matrix3.fromQuaternion(orientation);
   Cesium.Matrix4.multiplyByMatrix3(modelMatrix, rotation, modelMatrix);
+  // PlaneGeometry creates a 1×1 unit plane (−0.5..0.5). Scale the local
+  // frame so the plane matches the frustum's far-cap dimensions (hundreds
+  // of metres across). Without this the monitor plane is ~1 m wide and
+  // invisible at any practical viewing distance.
+  const scale = Cesium.Matrix4.fromScale(
+    new Cesium.Cartesian3(geometry.halfW * 2, geometry.halfH * 2, 1),
+  );
+  Cesium.Matrix4.multiply(modelMatrix, scale, modelMatrix);
 
   // Build the ImageMaterial for the canvas/video texture.
   // Always start with the canvas (which has a placeholder painted on it) —
@@ -1685,6 +1707,7 @@ function createProjectionPlane(record, runtime, geometry, positions) {
     geometryInstances: new Cesium.GeometryInstance({
       geometry: planeGeometry,
       modelMatrix,
+      id: runtime.cameraId,
       attributes: {
         color: Cesium.ColorGeometryInstanceAttribute.fromColor(Cesium.Color.WHITE),
       },
@@ -4346,7 +4369,13 @@ const cctvLayer = {
 
     const sources = await loadCameraSources();
     const catalogFromSources = buildCatalogFromSources(sources);
-    const catalog = catalogFromSources.length ? catalogFromSources : seedCatalog();
+    // Merge seed cameras (Portuguese cities) that aren't already in the
+    // backend source catalog. Backend sources cover Austin/London/California;
+    // the seeds provide synthetic cameras at Portuguese POIs.
+    const sourceIds = new Set(catalogFromSources.map((c) => c.id));
+    const seeds = seedCatalog();
+    const seedOnly = seeds.filter((c) => !sourceIds.has(c.id));
+    const catalog = [...catalogFromSources, ...seedOnly];
 
     // Viewshed color identity (design §3a): golden-angle hue over the
     // id-SORTED catalog index — deterministic across sessions for a stable
