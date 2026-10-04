@@ -473,6 +473,7 @@ export const LEGACY_LAYER_STATE_TOKENS = Object.freeze({
   military: 'm',
   'military-awareness': 'g',
   'military-installations': 'i',
+  properties: 'pp',
   radio: 'r',
   'recent-imagery': '1',
   'rocket-launches': 'x',
@@ -608,6 +609,7 @@ export const LAYER_STATE_REGISTRY = Object.freeze([
     token: 'i',
     disposition: 'enabled-only',
   }),
+  Object.freeze({ id: 'properties', token: 'pp', disposition: 'enabled-only' }),
   Object.freeze({
     id: 'radio',
     token: 'r',

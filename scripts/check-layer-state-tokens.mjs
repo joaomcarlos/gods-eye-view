@@ -34,6 +34,7 @@ export const PRE_LEDGER_LAYER_STATE_TOKENS = Object.freeze({
   military: 'm',
   'military-awareness': 'g',
   'military-installations': 'i',
+  properties: 'pp',
   radio: 'r',
   'recent-imagery': '1',
   'rocket-launches': 'x',

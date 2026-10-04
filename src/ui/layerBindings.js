@@ -52,6 +52,9 @@ export class LayerBindings {
   get _cctvControls() {
     return this.readControls()._cctvControls;
   }
+  get _propertiesControls() {
+    return this.readControls()._propertiesControls;
+  }
   get _radioControls() {
     return this.readControls()._radioControls;
   }
@@ -232,7 +235,8 @@ export class LayerBindings {
     }
     this._updateGlobalLoadingFeedback(performance.now());
     this._syncContextModeButtons();
-    this._cctvControls.connect();
+    this._cctvControls?.connect();
+    this._propertiesControls?.connect();
     this._radioControls.connect();
     this._connectDirectionsCamera();
     this._connectWeatherCamera();

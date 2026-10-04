@@ -15,6 +15,7 @@ import { readShellElements } from './shellElements.js';
 import { CockpitCoordinator } from './cockpitCoordinator.js';
 import { ContextControls } from './context.js';
 import { CctvControls } from './cctv.js';
+import { PropertiesControls } from './propertiesControls.js';
 import { RadioControls } from './radio.js';
 import { LocalSdrControls } from './localSdrControls.js';
 import { LocationNavigation } from './locationNavigation.js';
@@ -262,6 +263,7 @@ export class StyleManager extends ShellFacade {
         hud: this.hud,
         _contextControls: this._contextControls,
         _cctvControls: this._cctvControls,
+        _propertiesControls: this._propertiesControls,
         _radioControls: this._radioControls,
       }),
       operations: {
@@ -569,6 +571,7 @@ export class StyleManager extends ShellFacade {
     this._initRightPanelAdaptiveLayout();
     this._initRadioPanel();
     this._initCctvPanel();
+    this._initPropertiesPanel();
     this._initGlobalContextPanel();
     this._initLocationBar();
     this._initShareButton();
@@ -928,6 +931,34 @@ export class StyleManager extends ShellFacade {
     const cameraId = activate();
     if (!cameraId) return false;
     return this._runExplicitNavigation('camera', () => focus(cameraId));
+  }
+
+  /** Compose property panel controls from the properties layer and application actions. */
+  _initPropertiesPanel() {
+    this._propertiesControls?.destroy();
+    const propertiesLayer = this._dataManager?.layers?.get('properties')?.module;
+    this._propertiesControls = new PropertiesControls({
+      properties: propertiesLayer,
+      elements: {
+        _propertiesPanel: this._propertiesPanel,
+        _propertiesStatus: this._propertiesStatus,
+        _propertiesPhoto: this._propertiesPhoto,
+        _propertiesPhotoWrap: this._propertiesPhotoWrap,
+        _propertiesPhotoPrev: this._propertiesPhotoPrev,
+        _propertiesPhotoNext: this._propertiesPhotoNext,
+        _propertiesPhotoCounter: this._propertiesPhotoCounter,
+        _propertiesMeta: this._propertiesMeta,
+        _propertiesEnableBtn: this._propertiesEnableBtn,
+        _propertiesFlyBtn: this._propertiesFlyBtn,
+        _propertiesLink: this._propertiesLink,
+      },
+      actions: {
+        isEnabled: () => this._dataManager?.isEnabled('properties'),
+        setEnabled: (next) =>
+          this._dataManager?.setEnabled('properties', next, { origin: 'user' }),
+        setPanelCollapsed: (...args) => this.setPanelCollapsed(...args),
+      },
+    });
   }
 
   /** Compose camera panel controls from the existing camera port and application actions. */
@@ -1535,6 +1566,7 @@ export class StyleManager extends ShellFacade {
     this._cameraOrientationControls?.destroy();
     this._clearLayersControl?.destroy();
     this._cctvControls?.destroy();
+    this._propertiesControls?.destroy();
     this._radioControls?.destroy();
     this._localSdrControls?.destroy();
     this._cockpitCoordinator.stop();

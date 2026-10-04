@@ -18,6 +18,7 @@ import {
   loadNswSourcesFromOpenData,
   loadCalgarySourcesFromOpenData,
   loadDelDOTSourcesFromOpenData,
+  loadViaVerdeSourcesFromApi,
 } from './sources.js';
 
 /** Env kill switch: unset or anything but "0" means enabled. */
@@ -76,6 +77,11 @@ const LIVE_PACKS = [
     name: 'warendorf',
     enabled: () => envEnabled('CCTV_WARENDORF_ENABLED'),
     load: loadWarendorfSourcesFromCatalog,
+  },
+  {
+    name: 'viaverde',
+    enabled: () => envEnabled('CCTV_VIAVERDE_ENABLED'),
+    load: loadViaVerdeSourcesFromApi,
   },
   {
     name: 'nsw',

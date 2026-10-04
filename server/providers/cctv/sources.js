@@ -1701,3 +1701,128 @@ export async function loadDelDOTSourcesFromOpenData() {
     return [];
   }
 }
+
+// ── Via Verde / Brisa (Portugal highways A1/A2/A3/A4) ──────────────────────────
+
+const VIAVERDE_API_BASE =
+  'https://www.viaverde.pt/Particulares/Ferramentas/Estrada/api';
+const VIAVERDE_SESSION_COOKIE = 'viaverde_session';
+const VIAVERDE_SESSION_MAX_AGE_MS = 10 * 60 * 1000;
+const VIAVERDE_PAGE_URL = 'https://www.viaverde.pt/Particulares/Ferramentas/Estrada';
+const VIAVERDE_CAMERA_IDS = [
+  'A1-001', 'A1-002', 'A1-003', 'A1-004', 'A1-005',
+  'A1-006', 'A1-007', 'A1-008', 'A1-009', 'A1-010',
+  'A2-001', 'A2-002', 'A2-003', 'A2-004', 'A2-005',
+  'A3-001', 'A3-002', 'A3-003', 'A3-004', 'A3-005',
+  'A4-001', 'A4-002', 'A4-003', 'A4-004', 'A4-005',
+];
+
+let viaVerdeSession = { cookie: null, fetchedAt: 0 };
+
+async function viaVerdeSessionCookie() {
+  const now = Date.now();
+  if (viaVerdeSession.cookie && now - viaVerdeSession.fetchedAt < VIAVERDE_SESSION_MAX_AGE_MS) {
+    return viaVerdeSession.cookie;
+  }
+  try {
+    const resp = await fetch(VIAVERDE_PAGE_URL, {
+      headers: { 'User-Agent': 'gods-eye-view-cctv/1.0', Accept: 'text/html' },
+      signal: AbortSignal.timeout(CCTV_SOURCE_FETCH_TIMEOUT_MS),
+    });
+    const setCookie = resp.headers.get('set-cookie') || '';
+    const match = setCookie.match(new RegExp(`${VIAVERDE_SESSION_COOKIE}=([^;]+)`));
+    if (match) {
+      viaVerdeSession = { cookie: match[1], fetchedAt: now };
+      return match[1];
+    }
+    viaVerdeSession = { cookie: null, fetchedAt: now };
+    return null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Fetch camera list from the Via Verde public traffic-info API.
+ * The API requires a session cookie obtained from the Via Verde website.
+ */
+async function fetchViaVerdeCameras() {
+  const cookie = await viaVerdeSessionCookie();
+  if (!cookie) return [];
+  const endpoints = [`${VIAVERDE_API_BASE}/Camera/GetCameras`];
+  for (const ep of endpoints) {
+    try {
+      const resp = await fetch(ep, {
+        headers: {
+          'User-Agent': 'gods-eye-view-cctv/1.0',
+          Accept: 'application/json',
+          Cookie: `${VIAVERDE_SESSION_COOKIE}=${cookie}`,
+          Referer: VIAVERDE_PAGE_URL,
+        },
+        signal: AbortSignal.timeout(CCTV_SOURCE_FETCH_TIMEOUT_MS),
+      });
+      if (!resp.ok) continue;
+      const data = await resp.json();
+      const cameras = data?.data || data?.Data || data || [];
+      if (Array.isArray(cameras) && cameras.length > 0) return cameras;
+    } catch {
+      /* try next endpoint */
+    }
+  }
+  return [];
+}
+
+function viaVerdeCameraToSource(cam) {
+  const id = String(cam.Id || cam.id || cam.CameraId || '').trim();
+  if (!id) return null;
+  const lat = Number(cam.Latitude ?? cam.latitude ?? cam.Lat ?? cam.lat);
+  const lon = Number(cam.Longitude ?? cam.longitude ?? cam.Lon ?? cam.lng ?? cam.Lng);
+  if (!isPlausibleLatLon(lat, lon)) return null;
+  const snapshotUrl = String(cam.ImageUrl || cam.imageUrl || cam.SnapshotUrl || cam.snapshotUrl || cam.Url || cam.url || '').trim();
+  const name = String(cam.Name || cam.name || cam.Description || cam.description || `Brisa ${id}`).trim();
+  return {
+    id: `brisa-${id}`,
+    name,
+    city: 'Portugal',
+    cityId: 'lisbon',
+    lat,
+    lon,
+    url: snapshotUrl,
+    snapshotUrl,
+    feedType: 'image',
+    sourceKind: 'viaverde',
+    provider: 'Brisa / Via Verde',
+    headingDeg: 0,
+    pitchDeg: -15,
+    fovDeg: 75,
+    rangeM: 600,
+    mountHeightM: 12,
+    groundElevationM: 30,
+    license: 'Via Verde public traffic info',
+  };
+}
+
+/** Load Brisa/Via Verde highway cameras (A1/A2/A3/A4) from the public API. */
+export async function loadViaVerdeSourcesFromApi() {
+  const maxCount = Math.max(
+    1,
+    Math.min(500, Number(process.env.CCTV_VIAVERDE_MAX_SOURCES || '100') || 100),
+  );
+  try {
+    const raw = await fetchViaVerdeCameras();
+    const seen = new Set();
+    const cameras = [];
+    for (const cam of raw) {
+      const source = viaVerdeCameraToSource(cam);
+      if (!source || seen.has(source.id)) continue;
+      seen.add(source.id);
+      cameras.push(source);
+      if (cameras.length >= maxCount) break;
+    }
+    console.log(`[CCTV] Loaded Via Verde camera sources: ${cameras.length} (API returned ${raw.length})`);
+    return cameras;
+  } catch (error) {
+    console.warn('[CCTV] Via Verde source fetch error:', error?.message || error);
+    return [];
+  }
+}
