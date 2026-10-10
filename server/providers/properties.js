@@ -32,7 +32,9 @@ export function propertiesProxy() {
         if (!resp.ok) {
           res.statusCode = resp.status;
           res.setHeader('Content-Type', 'application/json');
-          res.end(JSON.stringify({ error: `Minha Morada API HTTP ${resp.status}` }));
+          res.end(
+            JSON.stringify({ error: `Minha Morada API HTTP ${resp.status}` }),
+          );
           return;
         }
         const data = await resp.json();
@@ -42,7 +44,12 @@ export function propertiesProxy() {
       } catch (e) {
         res.statusCode = 502;
         res.setHeader('Content-Type', 'application/json');
-        res.end(JSON.stringify({ error: 'Properties proxy error', detail: e?.message || String(e) }));
+        res.end(
+          JSON.stringify({
+            error: 'Properties proxy error',
+            detail: e?.message || String(e),
+          }),
+        );
       }
     });
   };

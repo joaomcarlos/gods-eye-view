@@ -9,6 +9,7 @@
 @import './src/ui/styles/radio.css';
 @import './src/ui/styles/cctv.css';
 @import './src/ui/styles/properties.css';
+@import './src/ui/styles/street-level.css';
 @import './src/ui/styles/scenes.css';
 @import './src/ui/styles/bhote-koshi.css';
 @import './src/ui/styles/recent-imagery.css';
@@ -20,6 +21,7 @@
 @import './src/ui/styles/command-dock-trays.css';
 @import './src/ui/styles/command-dock-sliding.css';
 @import './src/ui/styles/voice-cost.css';
+@import './src/ui/styles/voice-card.css';
 @import './src/ui/styles/first-run.css';
 @import './src/ui/styles/provider-settings.css';
 

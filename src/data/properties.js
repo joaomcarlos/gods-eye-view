@@ -1,5 +1,9 @@
 import * as Cesium from 'cesium';
-import { registerPickOwner, unregisterPickOwner, isOwnedByOtherLayer } from './pickRegistry.js';
+import {
+  registerPickOwner,
+  unregisterPickOwner,
+  isOwnedByOtherLayer,
+} from './pickRegistry.js';
 import { bindTrackingClickGesture } from './trackingClickGesture.js';
 
 /**
@@ -17,19 +21,23 @@ const PROPERTIES_PREFIX = 'prop:';
 const UPDATE_INTERVAL = 5 * 60 * 1000; // 5 minutes
 
 // Green house icon (SVG → data URI)
-const HOUSE_ICON = 'data:image/svg+xml;base64,' + btoa(
-  '<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32">' +
-  '<path d="M16 4 L4 14 L7 14 L7 27 L25 27 L25 14 L28 14 Z" fill="#22c55e" stroke="#16a34a" stroke-width="1.5"/>' +
-  '<rect x="13" y="18" width="6" height="9" fill="#16a34a"/>' +
-  '</svg>'
-);
+const HOUSE_ICON =
+  'data:image/svg+xml;base64,' +
+  btoa(
+    '<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32">' +
+      '<path d="M16 4 L4 14 L7 14 L7 27 L25 27 L25 14 L28 14 Z" fill="#22c55e" stroke="#16a34a" stroke-width="1.5"/>' +
+      '<rect x="13" y="18" width="6" height="9" fill="#16a34a"/>' +
+      '</svg>',
+  );
 
-const HOUSE_ICON_ACTIVE = 'data:image/svg+xml;base64,' + btoa(
-  '<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32">' +
-  '<path d="M16 4 L4 14 L7 14 L7 27 L25 27 L25 14 L28 14 Z" fill="#facc15" stroke="#eab308" stroke-width="1.5"/>' +
-  '<rect x="13" y="18" width="6" height="9" fill="#eab308"/>' +
-  '</svg>'
-);
+const HOUSE_ICON_ACTIVE =
+  'data:image/svg+xml;base64,' +
+  btoa(
+    '<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32">' +
+      '<path d="M16 4 L4 14 L7 14 L7 27 L25 27 L25 14 L28 14 Z" fill="#facc15" stroke="#eab308" stroke-width="1.5"/>' +
+      '<rect x="13" y="18" width="6" height="9" fill="#eab308"/>' +
+      '</svg>',
+  );
 
 const IDLE_COLOR = Cesium.Color.WHITE.withAlpha(0.9);
 const ACTIVE_COLOR = Cesium.Color.WHITE.withAlpha(1.0);
@@ -65,8 +73,12 @@ function formatPropertyForUI(p) {
 
 function extractPickedPropertyId(picked) {
   if (!picked) return null;
-  const rawId = typeof picked.id === 'string' ? picked.id
-    : typeof picked.primitive?.id === 'string' ? picked.primitive.id : null;
+  const rawId =
+    typeof picked.id === 'string'
+      ? picked.id
+      : typeof picked.primitive?.id === 'string'
+        ? picked.primitive.id
+        : null;
   if (!rawId || !rawId.startsWith(PROPERTIES_PREFIX)) return null;
   return rawId.slice(PROPERTIES_PREFIX.length);
 }
@@ -90,12 +102,18 @@ export function createPropertiesLayer() {
   function notifyListeners() {
     const state = getUIState();
     for (const cb of _listeners) {
-      try { cb(state); } catch { /* no-op */ }
+      try {
+        cb(state);
+      } catch {
+        /* no-op */
+      }
     }
   }
 
   function getUIState() {
-    const active = _activePropertyId ? _propertiesById.get(_activePropertyId) : null;
+    const active = _activePropertyId
+      ? _propertiesById.get(_activePropertyId)
+      : null;
     return {
       enabled: _enabled,
       count: _count,
@@ -129,7 +147,8 @@ export function createPropertiesLayer() {
         const picked = viewer.scene.pick(click.position);
         const propId = extractPickedPropertyId(picked);
         if (propId) {
-          if (isOwnedByOtherLayer('properties', PROPERTIES_PREFIX + propId)) return;
+          if (isOwnedByOtherLayer('properties', PROPERTIES_PREFIX + propId))
+            return;
           selectProperty(propId);
           return;
         }
@@ -147,7 +166,12 @@ export function createPropertiesLayer() {
 
     enable(viewer) {
       _enabled = true;
-      registerPickOwner('properties', (pickedId) => typeof pickedId === 'string' && pickedId.startsWith(PROPERTIES_PREFIX));
+      registerPickOwner(
+        'properties',
+        (pickedId) =>
+          typeof pickedId === 'string' &&
+          pickedId.startsWith(PROPERTIES_PREFIX),
+      );
       if (_dataSource) _dataSource.show = true;
       if (_billboards) _billboards.show = true;
       notifyListeners();
@@ -166,7 +190,16 @@ export function createPropertiesLayer() {
       if (!_enabled) return false;
       try {
         // Fetch properties for all configured Portuguese districts
-        const districts = ['Lisboa', 'Porto', 'Faro', 'Setúbal', 'Braga', 'Coimbra', 'Aveiro', 'Leiria'];
+        const districts = [
+          'Lisboa',
+          'Porto',
+          'Faro',
+          'Setúbal',
+          'Braga',
+          'Coimbra',
+          'Aveiro',
+          'Leiria',
+        ];
         const allProperties = [];
         const seen = new Set();
 
@@ -182,10 +215,15 @@ export function createPropertiesLayer() {
           const resp = await fetch(`${API_ENDPOINT}?${params}`, { signal });
           if (!resp.ok) continue;
           const data = await resp.json();
-          const listings = Array.isArray(data?.data) ? data.data : (Array.isArray(data) ? data : []);
+          const listings = Array.isArray(data?.data)
+            ? data.data
+            : Array.isArray(data)
+              ? data
+              : [];
           for (const prop of listings) {
             if (!prop.id || seen.has(prop.id)) continue;
-            if (!Number.isFinite(prop.lat) || !Number.isFinite(prop.lng)) continue;
+            if (!Number.isFinite(prop.lat) || !Number.isFinite(prop.lng))
+              continue;
             seen.add(prop.id);
             allProperties.push(prop);
           }

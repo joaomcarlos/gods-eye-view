@@ -59,6 +59,7 @@ export function readShellElements(document = globalThis.document) {
     _dataPanel: document.getElementById('data-panel'),
     _scenePanel: document.getElementById('scene-panel'),
     _cctvPanel: document.getElementById('cctv-panel'),
+    _streetLevelPanel: document.getElementById('street-level-panel'),
     _radioPanel: document.getElementById('radio-panel'),
     _contextRadioDock: document.getElementById('context-radio-dock'),
     _contextRadioToggleBtn: document.getElementById('context-radio-toggle-btn'),
@@ -167,7 +168,9 @@ export function readShellElements(document = globalThis.document) {
     _propertiesPhotoWrap: document.getElementById('properties-photo-wrap'),
     _propertiesPhotoPrev: document.getElementById('properties-photo-prev'),
     _propertiesPhotoNext: document.getElementById('properties-photo-next'),
-    _propertiesPhotoCounter: document.getElementById('properties-photo-counter'),
+    _propertiesPhotoCounter: document.getElementById(
+      'properties-photo-counter',
+    ),
     _propertiesMeta: document.getElementById('properties-meta'),
     _propertiesEnableBtn: document.getElementById('properties-enable-btn'),
     _propertiesFlyBtn: document.getElementById('properties-fly-btn'),

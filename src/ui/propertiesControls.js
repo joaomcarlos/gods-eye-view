@@ -30,7 +30,8 @@ export class PropertiesControls {
     this._propertiesUnsubscribe = this.properties?.subscribe?.((state) =>
       this._renderState(state),
     );
-    if (this.properties?.getUIState) this._renderState(this.properties.getUIState());
+    if (this.properties?.getUIState)
+      this._renderState(this.properties.getUIState());
   }
 
   _initPanel() {
@@ -58,13 +59,13 @@ export class PropertiesControls {
   _cyclePhoto(delta) {
     const photos = this._propertiesState?.activeProperty?.photos || [];
     if (photos.length <= 1) return;
-    this._photoIndex = (this._photoIndex + delta + photos.length) % photos.length;
+    this._photoIndex =
+      (this._photoIndex + delta + photos.length) % photos.length;
     if (this._propertiesPhoto) {
       this._propertiesPhoto.src = photos[this._photoIndex];
     }
     if (this._propertiesPhotoCounter) {
-      this._propertiesPhotoCounter.textContent =
-        `${this._photoIndex + 1} / ${photos.length}`;
+      this._propertiesPhotoCounter.textContent = `${this._photoIndex + 1} / ${photos.length}`;
     }
   }
 
@@ -124,9 +125,11 @@ export class PropertiesControls {
           photos.length > 1 ? `1 / ${photos.length}` : '';
       }
       if (this._propertiesPhotoPrev)
-        this._propertiesPhotoPrev.style.display = photos.length > 1 ? '' : 'none';
+        this._propertiesPhotoPrev.style.display =
+          photos.length > 1 ? '' : 'none';
       if (this._propertiesPhotoNext)
-        this._propertiesPhotoNext.style.display = photos.length > 1 ? '' : 'none';
+        this._propertiesPhotoNext.style.display =
+          photos.length > 1 ? '' : 'none';
 
       if (this._propertiesMeta) {
         const features = [];
@@ -137,12 +140,20 @@ export class PropertiesControls {
 
         const details = [];
         if (active.typology) details.push(`<span>${active.typology}</span>`);
-        if (active.areaNet != null) details.push(`<span>${active.areaNet} m²</span>`);
-        if (active.bedrooms != null) details.push(`<span>${active.bedrooms} quartos</span>`);
-        if (active.bathrooms != null) details.push(`<span>${active.bathrooms} WC</span>`);
-        if (active.floor != null) details.push(`<span>${active.floor}º andar</span>`);
+        if (active.areaNet != null)
+          details.push(`<span>${active.areaNet} m²</span>`);
+        if (active.bedrooms != null)
+          details.push(`<span>${active.bedrooms} quartos</span>`);
+        if (active.bathrooms != null)
+          details.push(`<span>${active.bathrooms} WC</span>`);
+        if (active.floor != null)
+          details.push(`<span>${active.floor}º andar</span>`);
 
-        const locationParts = [active.parish, active.municipality, active.district].filter(Boolean);
+        const locationParts = [
+          active.parish,
+          active.municipality,
+          active.district,
+        ].filter(Boolean);
 
         this._propertiesMeta.innerHTML = `
           <div class="prop-title">${this._escapeHtml(active.title || active.typology || 'Property')}</div>
@@ -167,9 +178,12 @@ export class PropertiesControls {
       }
     } else {
       if (this._propertiesPhoto) this._propertiesPhoto.removeAttribute('src');
-      if (this._propertiesPhotoCounter) this._propertiesPhotoCounter.textContent = '';
-      if (this._propertiesPhotoPrev) this._propertiesPhotoPrev.style.display = 'none';
-      if (this._propertiesPhotoNext) this._propertiesPhotoNext.style.display = 'none';
+      if (this._propertiesPhotoCounter)
+        this._propertiesPhotoCounter.textContent = '';
+      if (this._propertiesPhotoPrev)
+        this._propertiesPhotoPrev.style.display = 'none';
+      if (this._propertiesPhotoNext)
+        this._propertiesPhotoNext.style.display = 'none';
       if (this._propertiesMeta) this._propertiesMeta.innerHTML = '';
       if (this._propertiesLink) this._propertiesLink.style.display = 'none';
     }

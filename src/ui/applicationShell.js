@@ -16,6 +16,7 @@ import { CockpitCoordinator } from './cockpitCoordinator.js';
 import { ContextControls } from './context.js';
 import { CctvControls } from './cctv.js';
 import { PropertiesControls } from './propertiesControls.js';
+import { StreetLevelControls } from './streetLevelControls.js';
 import { RadioControls } from './radio.js';
 import { LocalSdrControls } from './localSdrControls.js';
 import { LocationNavigation } from './locationNavigation.js';
@@ -105,6 +106,7 @@ export class StyleManager extends ShellFacade {
         _setRadioDisclosure: (...args) => this._setRadioDisclosure(...args),
         _syncCctvPanelViewport: (...args) =>
           this._syncCctvPanelViewport(...args),
+        _onPanelResized: (...args) => this._onPanelResized(...args),
         _syncContextRadioLauncherState: (...args) =>
           this._syncContextRadioLauncherState(...args),
         _showToast: (...args) => this._showToast(...args),
@@ -572,6 +574,7 @@ export class StyleManager extends ShellFacade {
     this._initRadioPanel();
     this._initCctvPanel();
     this._initPropertiesPanel();
+    this._initStreetLevelPanel();
     this._initGlobalContextPanel();
     this._initLocationBar();
     this._initShareButton();
@@ -936,7 +939,8 @@ export class StyleManager extends ShellFacade {
   /** Compose property panel controls from the properties layer and application actions. */
   _initPropertiesPanel() {
     this._propertiesControls?.destroy();
-    const propertiesLayer = this._dataManager?.layers?.get('properties')?.module;
+    const propertiesLayer =
+      this._dataManager?.layers?.get('properties')?.module;
     this._propertiesControls = new PropertiesControls({
       properties: propertiesLayer,
       elements: {
@@ -959,6 +963,46 @@ export class StyleManager extends ShellFacade {
         setPanelCollapsed: (...args) => this.setPanelCollapsed(...args),
       },
     });
+  }
+
+  /** Compose the Street Level panel controls from its layer and application actions. */
+  _initStreetLevelPanel() {
+    const { streetLevelLayer } = this.services;
+    this._streetLevelControls?.destroy();
+    this._streetLevelControls = null;
+    if (!this._streetLevelPanel || !streetLevelLayer) return;
+    // Photo framing and FOLLOW release tracking like any explicit flight.
+    streetLevelLayer.attachNavigation?.({
+      run: (noun, move) => this._runExplicitNavigation(noun, move),
+      begin: (noun) => this._beginDeferredNavigation(noun),
+      reassert: (generation) => this._reassertNavigationHandoff(generation),
+      subscribeHandoff: (listener) =>
+        this._navigation.subscribeCameraHandoff(listener),
+    });
+    this._streetLevelControls = new StreetLevelControls({
+      root: this._streetLevelPanel,
+      layer: streetLevelLayer,
+      actions: {
+        isEnabled: () => this._dataManager?.isEnabled('street-level') === true,
+        setEnabled: (enabled) =>
+          this._dataManager?.setEnabled('street-level', enabled, {
+            origin: 'user',
+          }),
+        setParams: (params, options) =>
+          this._dataManager?.setLayerParams('street-level', params, options),
+        setPanelCollapsed: (collapsed, options) =>
+          this.setPanelCollapsed('street-level-panel', collapsed, options),
+        dockPanel: () => this._panelChrome.dockPanel('street-level-panel'),
+        showToast: (message) => this._showToast(message),
+        // Lets the panel open for a user, voice or tool switch-on, not a restore.
+        subscribeEnableRequests: (listener) =>
+          this._dataManager?.subscribeVisibilityRequests?.((change) => {
+            if (change?.layerId === 'street-level' && change.enabled)
+              listener(change.origin);
+          }) || null,
+      },
+    });
+    this._streetLevelControls.connect();
   }
 
   /** Compose camera panel controls from the existing camera port and application actions. */
@@ -1504,6 +1548,13 @@ export class StyleManager extends ShellFacade {
     this._initCockpitDisplayPortal();
   }
 
+  /** A portable panel was resized or docked: refit any viewport inside it. */
+  _onPanelResized(panelId) {
+    if (panelId === 'cctv-panel') this._syncCctvPanelViewport();
+    if (panelId === 'street-level-panel')
+      this._streetLevelControls?.onPanelResized();
+  }
+
   /**
    * Recalculates the CCTV panel max-height based on its current top position
    * and the window height, enabling internal scroll without viewport overflow.
@@ -1567,6 +1618,8 @@ export class StyleManager extends ShellFacade {
     this._clearLayersControl?.destroy();
     this._cctvControls?.destroy();
     this._propertiesControls?.destroy();
+    this.services?.streetLevelLayer?.attachNavigation?.(null);
+    this._streetLevelControls?.destroy();
     this._radioControls?.destroy();
     this._localSdrControls?.destroy();
     this._cockpitCoordinator.stop();
