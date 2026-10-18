@@ -5,6 +5,7 @@ import {
   isOwnedByOtherLayer,
 } from './pickRegistry.js';
 import { bindTrackingClickGesture } from './trackingClickGesture.js';
+import { msg } from '../i18n/index.js';
 
 /**
  * Portuguese real estate listings from the Minha Morada API (free, public).
@@ -260,7 +261,7 @@ export function createPropertiesLayer() {
       } catch (e) {
         if (signal?.aborted) return false;
         console.warn('[Data:Properties] Fetch error:', e);
-        _lastError = 'Minha Morada network error';
+        _lastError = msg('Minha Morada network error');
         notifyListeners();
         return false;
       }

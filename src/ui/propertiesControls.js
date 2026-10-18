@@ -1,3 +1,5 @@
+import { t, tn } from '../i18n/index.js';
+
 /** Own property-panel interaction and presentation. */
 export class PropertiesControls {
   constructor({ elements, properties, actions }) {
@@ -94,21 +96,26 @@ export class PropertiesControls {
 
     if (this._propertiesEnableBtn) {
       this._propertiesEnableBtn.textContent = enabled
-        ? 'PROPERTIES ON'
-        : 'PROPERTIES OFF';
+        ? t('PROPERTIES ON')
+        : t('PROPERTIES OFF');
       this._propertiesEnableBtn.classList.toggle('active', enabled);
     }
 
     if (this._propertiesStatus) {
       if (error) {
-        this._propertiesStatus.textContent = error;
+        this._propertiesStatus.textContent = t(error);
       } else if (enabled && count > 0) {
-        this._propertiesStatus.textContent = `${count} listings loaded`;
+        this._propertiesStatus.textContent = tn(
+          count,
+          '{count} listing loaded',
+          '{count} listings loaded',
+        );
       } else if (enabled) {
-        this._propertiesStatus.textContent = 'Loading listings…';
+        this._propertiesStatus.textContent = t('Loading listings…');
       } else {
-        this._propertiesStatus.textContent =
-          'Enable Properties to load Portuguese listings';
+        this._propertiesStatus.textContent = t(
+          'Enable Properties to load Portuguese listings',
+        );
       }
     }
 
